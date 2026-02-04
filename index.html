@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>圖庫收藏</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖼️</text></svg>">
+</head>
+<body>
+    <!-- 側邊欄 - 標籤篩選 -->
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2><i class="fas fa-tags"></i> 篩選標籤</h2>
+            <button class="btn-clear" onclick="clearAllFilters()">
+                <i class="fas fa-times"></i> 清除
+            </button>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <i class="fas fa-folder"></i>
+                <span id="totalGalleries">0</span> 個圖庫
+            </div>
+            <div class="stat-item">
+                <i class="fas fa-image"></i>
+                <span id="totalImages">0</span> 張圖片
+            </div>
+        </div>
+        
+        <div class="tag-filters">
+            <div class="filter-group">
+                <h3><i class="fas fa-user"></i> 角色</h3>
+                <div id="character-tags" class="tag-list">
+                    <!-- 角色標籤會動態生成 -->
+                </div>
+            </div>
+            
+            <div class="filter-group">
+                <h3><i class="fas fa-tag"></i> 標籤</h3>
+                <div id="custom-tags" class="tag-list">
+                    <!-- 標籤會動態生成 -->
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 主內容區 -->
+    <main class="main-content">
+        <header class="header">
+            <div class="header-left">
+                <h1><i class="fas fa-images"></i> 圖庫收藏</h1>
+                <p class="subtitle">精選圖片收藏庫</p>
+            </div>
+        </header>
+        
+        <!-- 圖庫展示區 -->
+        <div class="gallery-view" id="galleryView">
+            <!-- 圖庫卡片會在這裡動態生成 -->
+            <div class="loading" id="loading">
+                <i class="fas fa-spinner fa-spin"></i> 載入中...
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+    <script src="b2-manager.js"></script>
+    <script src="management.js"></script>
+</body>
+</html>
