@@ -100,13 +100,13 @@ class GalleryManager {
         `;
     }
     
-    // 上傳預覽
+    // ★ 修正：上傳預覽（$ 符號被還原）
     renderUploadPreview() {
         return `
             <div class="upload-preview" id="uploadPreview">
                 ${this.uploadedFiles.map((file, index) => `
                     <div class="preview-item">
-                        <img src="\({URL.createObjectURL(file)}" alt="\){file.name}" class="preview-img">
+                        <img src="${URL.createObjectURL(file)}" alt="${file.name}" class="preview-img">
                         <button class="preview-remove" onclick="galleryManager.removeFile(${index})">
                             <i class="fas fa-times"></i>
                         </button>
@@ -180,7 +180,7 @@ class GalleryManager {
         `;
     }
     
-    // 刪除標籤頁
+    // ★ 修正：刪除標籤頁（$ 符號被還原）
     renderDeleteTab() {
         return `
             <div style="text-align: center; padding: 40px;">
@@ -200,7 +200,7 @@ class GalleryManager {
                             <div style="padding: 15px; display: flex; align-items: center;">
                                 <input type="checkbox" id="delete-${index}" style="margin-right: 10px;">
                                 <label for="delete-${index}" style="flex: 1; cursor: pointer;">
-                                    <strong>\({gallery.name}</strong> (\){gallery.fileCount} 張圖片)
+                                    <strong>${gallery.name}</strong> (${gallery.fileCount} 張圖片)
                                 </label>
                             </div>
                         </div>
