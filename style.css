@@ -593,8 +593,8 @@ body {
     background-color: rgba(30, 41, 59, 0.9);
     border-top: 1px solid rgba(51, 65, 85, 0.5);
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
+    gap: 10px;
 }
 
 .viewer-btn {
@@ -633,43 +633,60 @@ body {
     background-color: rgba(0, 0, 0, 0.95);
 }
 
-.fs-header {
+/* ★ 獨立的關閉按鈕（右上角浮動） */
+.fs-close-btn {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    padding: 20px 30px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 10;
-}
-
-.fs-header span {
-    color: white;
-    font-size: 20px;
-}
-
-.fs-close {
-    background: none;
+    top: 15px;
+    right: 15px;
+    z-index: 200;
+    background: rgba(255, 255, 255, 0.15);
     border: none;
-    color: white;
-    font-size: 28px;
-    cursor: pointer;
-    width: 50px;
-    height: 50px;
+    color: rgba(255, 255, 255, 0.6);
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
+    font-size: 20px;
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: all 0.3s;
+    backdrop-filter: blur(5px);
 }
 
-.fs-close:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+.fs-close-btn:hover {
+    background: rgba(239, 68, 68, 0.5);
+    color: white;
+    transform: scale(1.1);
 }
 
+/* ★ 點擊翻頁區域（左半 / 右半） */
+.fs-click-zone {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 50%;
+    z-index: 10;
+    cursor: pointer;
+    /* 無背景，完全透明 */
+}
+
+.fs-click-left {
+    left: 0;
+    cursor: w-resize;
+}
+
+.fs-click-right {
+    right: 0;
+    cursor: e-resize;
+}
+
+/* 點擊時的視覺反饋（非常微妙） */
+.fs-click-zone:active {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* 全屏圖片容器 */
 .fs-image-container {
     width: 100%;
     height: 100%;
@@ -680,65 +697,136 @@ body {
 }
 
 .fs-image-container img {
-    max-width: 90%;
-    max-height: 80vh;
+    max-width: 100%;
+    max-height: 100%;
     object-fit: contain;
-    border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    /* 圖片在點擊區域下方，不影響顯示 */
+    position: relative;
+    z-index: 1;
+    pointer-events: none;
 }
 
-.fs-nav {
+/* 進度條容器 */
+.fs-progress-container {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 3px;
+    z-index: 150;
+    padding: 0 5px;
+}
+
+.fs-progress-bar {
+    flex: 1;
+    height: 3px;
     background-color: rgba(255, 255, 255, 0.2);
-    border: none;
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.fs-progress-fill {
+    height: 100%;
+    width: 0%;
+    background-color: #ffffff;
+    border-radius: 2px;
+    transition: width linear;
+}
+
+/* 自動播放控制按鈕組（底部中央） */
+.fs-auto-controls {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background-color: rgba(0, 0, 0, 0.4);
+    padding: 8px 14px;
+    border-radius: 25px;
+    backdrop-filter: blur(10px);
+    pointer-events: auto;
+    z-index: 50;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+/* 滑鼠移入全屏瀏覽器時顯示自動播放控制 */
+.fullscreen-viewer:hover .fs-auto-controls {
+    opacity: 1;
+}
+
+.fs-auto-btn {
+    background-color: rgba(255, 255, 255, 0.2);
     color: white;
-    width: 60px;
-    height: 60px;
+    border: none;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
-    font-size: 24px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 16px;
     transition: all 0.2s;
-    backdrop-filter: blur(10px);
 }
 
-.fs-nav:hover {
+.fs-auto-btn:hover {
     background-color: rgba(255, 255, 255, 0.3);
-    transform: translateY(-50%) scale(1.1);
+    transform: scale(1.1);
 }
 
-.fs-prev {
-    left: 30px;
-}
-
-.fs-next {
-    right: 30px;
-}
-
+/* 全屏底部信息欄 */
 .fs-info {
     position: absolute;
-    bottom: 30px;
+    bottom: 15px;
     left: 0;
     width: 100%;
-    text-align: center;
-    color: white;
-    font-size: 16px;
-    opacity: 0.8;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    padding: 0 20px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 13px;
+    pointer-events: none;
+    z-index: 50;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+/* 滑鼠移入時顯示底部資訊 */
+.fullscreen-viewer:hover .fs-info {
+    opacity: 1;
+}
+
+.fs-speed-info {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+/* 控制按鈕組 */
+.control-group {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    margin-bottom: 10px;
 }
 
 /* 響應式設計 */
 @media (max-width: 768px) {
     .viewer-content {
-        width: 95%;
-        height: 95vh;
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+        max-width: none;
     }
     
     .viewer-header {
-        padding: 15px 20px;
+        padding: 15px;
     }
     
     .viewer-header h2 {
@@ -751,38 +839,63 @@ body {
         padding: 15px;
     }
     
-    .fs-nav {
-        width: 50px;
-        height: 50px;
-        font-size: 20px;
+    .viewer-controls {
+        padding: 15px;
     }
     
-    .fs-prev {
-        left: 15px;
+    .viewer-btn {
+        padding: 12px 20px;
+        font-size: 16px;
     }
     
-    .fs-next {
-        right: 15px;
-    }
-}
-
-/* 在 style.css 中添加 */
-
-/* 移動設備觸控優化 */
-@media (max-width: 768px) {
-    /* 全屏瀏覽器按鈕加大 */
-    .fs-nav {
-        width: 50px;
-        height: 50px;
-        font-size: 20px;
-    }
-    
-    .fs-prev {
-        left: 10px;
-    }
-    
-    .fs-next {
+    .fs-close-btn {
+        top: 10px;
         right: 10px;
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+    }
+    
+    .fs-progress-container {
+        top: 0;
+        gap: 2px;
+        padding: 0 3px;
+    }
+    
+    .fs-progress-bar {
+        height: 2px;
+    }
+    
+    .fs-auto-controls {
+        bottom: 40px;
+        gap: 8px;
+        padding: 6px 12px;
+        opacity: 1; /* 手機上永遠顯示 */
+    }
+    
+    .fs-auto-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+    
+    .fs-info {
+        bottom: 8px;
+        font-size: 12px;
+        opacity: 1; /* 手機上永遠顯示 */
+    }
+    
+    .fs-speed-info {
+        font-size: 11px;
+    }
+    
+    /* 標籤調整 */
+    .tag {
+        min-height: 32px;
+        min-width: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     
     /* 圖庫卡片觸控優化 */
@@ -794,41 +907,25 @@ body {
         height: 150px;
     }
     
-    /* 彈窗調整 */
-    .viewer-content {
+    .sidebar {
         width: 100%;
-        height: 100%;
-        border-radius: 0;
-        max-width: none;
+        height: auto;
+        max-height: 40vh;
     }
     
-    .viewer-header {
-        padding: 15px;
+    .main-content {
+        padding: 20px;
     }
     
-    .viewer-controls {
-        padding: 15px;
+    .gallery-view {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
     }
     
-    .viewer-btn {
-        padding: 12px 20px;
-        font-size: 16px;
-    }
-    
-    /* 圖片網格調整 */
     .image-grid {
         grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
         gap: 10px;
         padding: 10px;
-    }
-    
-    /* 標籤調整 */
-    .tag {
-        min-height: 32px;
-        min-width: 40px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
     }
 }
 
@@ -845,6 +942,40 @@ body {
     .viewer-content {
         width: 95%;
         height: 95vh;
+    }
+}
+
+@media (max-width: 480px) {
+    .gallery-view {
+        grid-template-columns: 1fr;
+    }
+    
+    .gallery-cover-container {
+        height: 180px;
+    }
+}
+
+/* 觸控設備優化 */
+@media (hover: none) {
+    .fs-auto-controls {
+        opacity: 1; /* 觸控設備上永遠可見 */
+    }
+    
+    .fs-info {
+        opacity: 1;
+    }
+    
+    .fs-close-btn {
+        background: rgba(0, 0, 0, 0.4);
+        color: rgba(255, 255, 255, 0.8);
+    }
+    
+    .fs-click-zone:active {
+        background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .fs-auto-btn:active {
+        transform: scale(0.95);
     }
 }
 
@@ -920,102 +1051,6 @@ img {
     font-weight: bold;
 }
 
-/* 全屏模式的自動播放控制 */
-.fs-auto-controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-right: 20px;
-}
-
-.fs-auto-btn {
-    background-color: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: none;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    backdrop-filter: blur(10px);
-}
-
-.fs-auto-btn:hover {
-    background-color: rgba(255, 255, 255, 0.3);
-    transform: scale(1.1);
-}
-
-.fs-speed-indicator {
-    color: white;
-    font-size: 14px;
-    min-width: 40px;
-    text-align: center;
-    opacity: 0.8;
-}
-
-/* 控制按鈕組 */
-.control-group {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-    margin-bottom: 10px;
-}
-
-.viewer-controls {
-    padding: 15px 30px;
-    background-color: rgba(30, 41, 59, 0.9);
-    border-top: 1px solid rgba(51, 65, 85, 0.5);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-/* 響應式設計 */
-@media (max-width: 768px) {
-    .auto-play-controls {
-        flex-wrap: wrap;
-        justify-content: space-around;
-        gap: 8px;
-    }
-    
-    .auto-play-btn {
-        padding: 10px 15px;
-        font-size: 13px;
-        min-height: 44px; /* 適合觸控 */
-        min-width: 80px;
-    }
-    
-    .speed-indicator {
-        order: -1;
-        width: 100%;
-        text-align: center;
-        margin-bottom: 5px;
-    }
-    
-    .fs-auto-controls {
-        margin-right: 10px;
-        gap: 5px;
-    }
-    
-    .fs-auto-btn {
-        width: 40px;
-        height: 40px;
-    }
-    
-    .fs-speed-indicator {
-        font-size: 12px;
-    }
-}
-
-/* 滑鼠懸停效果 */
-.auto-play-btn:hover .fas {
-    transform: scale(1.1);
-}
-
 /* 播放/暫停狀態指示 */
 #toggleAutoPlay.playing {
     background-color: #ef4444;
@@ -1033,221 +1068,12 @@ img {
     background-color: rgba(220, 38, 38, 0.4);
 }
 
-/* 進度條容器 */
-.fs-progress-container {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    right: 10px;
-    display: flex;
-    gap: 5px;
-    z-index: 100;
-    padding: 0 5px;
-}
-
-.fs-progress-bar {
-    flex: 1;
-    height: 3px;
-    background-color: rgba(255, 255, 255, 0.3);
-    border-radius: 2px;
-    overflow: hidden;
-}
-
-.fs-progress-fill {
-    height: 100%;
-    width: 0%;
-    background-color: #ffffff;
-    border-radius: 2px;
-    transition: width linear;
-}
-
-/* 全屏控制層 */
-.fs-controls-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    pointer-events: none; /* 讓點擊穿透到圖片 */
-    z-index: 50;
-}
-
-.fs-control-btn {
-    background-color: rgba(0, 0, 0, 0.3);
-    border: none;
+.fs-speed-indicator {
     color: white;
-    width: 60px;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    pointer-events: auto; /* 恢復點擊事件 */
-    transition: all 0.3s;
-    opacity: 0;
-}
-
-.fs-control-btn:hover {
-    background-color: rgba(0, 0, 0, 0.5);
-    opacity: 1;
-}
-
-.fs-image-container:hover .fs-control-btn {
-    opacity: 0.7;
-}
-
-.fs-prev-btn {
-    border-radius: 0 10px 10px 0;
-}
-
-.fs-next-btn {
-    border-radius: 10px 0 0 10px;
-}
-
-/* 自動播放控制按鈕組 */
-.fs-auto-controls {
-    position: absolute;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    background-color: rgba(0, 0, 0, 0.5);
-    padding: 10px 15px;
-    border-radius: 25px;
-    backdrop-filter: blur(10px);
-    pointer-events: auto;
-}
-
-.fs-auto-btn {
-    background-color: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: none;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    transition: all 0.2s;
-}
-
-.fs-auto-btn:hover {
-    background-color: rgba(255, 255, 255, 0.3);
-    transform: scale(1.1);
-}
-
-/* 全屏底部信息欄 */
-.fs-info {
-    position: absolute;
-    bottom: 20px;
-    left: 0;
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 20px;
-    color: white;
-    font-size: 16px;
+    font-size: 13px;
+    min-width: 40px;
+    text-align: center;
     opacity: 0.8;
-    pointer-events: none;
-}
-
-.fs-speed-info {
-    font-size: 14px;
-    opacity: 0.7;
-}
-
-/* 全屏頭部 */
-.fs-header {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    padding: 20px;
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    z-index: 100;
-}
-
-/* 全屏圖片容器 */
-.fs-image-container {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-}
-
-.fs-image-container img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-}
-
-/* 響應式設計 */
-@media (max-width: 768px) {
-    .fs-progress-container {
-        top: 5px;
-        left: 5px;
-        right: 5px;
-        gap: 3px;
-    }
-    
-    .fs-progress-bar {
-        height: 2px;
-    }
-    
-    .fs-control-btn {
-        width: 50px;
-        opacity: 0.5; /* 手機上永遠顯示部分透明度 */
-    }
-    
-    .fs-auto-controls {
-        bottom: 10px;
-        gap: 10px;
-        padding: 8px 12px;
-    }
-    
-    .fs-auto-btn {
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
-    }
-    
-    .fs-info {
-        bottom: 10px;
-        padding: 0 15px;
-        font-size: 14px;
-    }
-    
-    .fs-speed-info {
-        font-size: 12px;
-    }
-}
-
-/* 觸控優化 */
-@media (hover: none) {
-    .fs-control-btn {
-        opacity: 0.5; /* 觸控設備上永遠可見 */
-    }
-    
-    .fs-control-btn:active {
-        opacity: 1;
-        background-color: rgba(0, 0, 0, 0.6);
-    }
-    
-    .fs-auto-btn:active {
-        transform: scale(0.95);
-    }
 }
 
 /* 滑動手勢區域 */
@@ -1567,7 +1393,7 @@ img {
     background-color: rgba(239, 68, 68, 0.1);
 }
 
-/* 響應式設計 */
+/* 響應式設計 - 管理面板 */
 @media (max-width: 768px) {
     .management-content {
         width: 95%;
