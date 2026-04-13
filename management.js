@@ -7,15 +7,15 @@ class GalleryManager {
         this.currentTab = 'upload';
     }
     
+    // ★ 新增：自然排序比較函數（根據檔名中的數字正確排序）
+    naturalSort(a, b) {
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    }
+    
     // 初始化管理界面
     async init() {
-        // 載入現有圖庫
         await this.loadExistingGalleries();
-        
-        // 渲染界面
         this.renderManagementPanel();
-        
-        // 設置事件監聽器
         this.setupEventListeners();
     }
     
@@ -106,7 +106,7 @@ class GalleryManager {
             <div class="upload-preview" id="uploadPreview">
                 ${this.uploadedFiles.map((file, index) => `
                     <div class="preview-item">
-                        <img src="${URL.createObjectURL(file)}" alt="${file.name}" class="preview-img">
+                        <img src="\({URL.createObjectURL(file)}" alt="\){file.name}" class="preview-img">
                         <button class="preview-remove" onclick="galleryManager.removeFile(${index})">
                             <i class="fas fa-times"></i>
                         </button>
@@ -200,7 +200,7 @@ class GalleryManager {
                             <div style="padding: 15px; display: flex; align-items: center;">
                                 <input type="checkbox" id="delete-${index}" style="margin-right: 10px;">
                                 <label for="delete-${index}" style="flex: 1; cursor: pointer;">
-                                    <strong>${gallery.name}</strong> (${gallery.fileCount} 張圖片)
+                                    <strong>\({gallery.name}</strong> (\){gallery.fileCount} 張圖片)
                                 </label>
                             </div>
                         </div>
@@ -216,9 +216,8 @@ class GalleryManager {
         this.renderManagementPanel();
     }
     
-    // 設置事件監聽器
+    // 設置事件監聯器
     setupEventListeners() {
-        // 拖放上傳
         const uploadArea = document.getElementById('uploadArea');
         const folderInput = document.getElementById('folderInput');
         
@@ -239,7 +238,6 @@ class GalleryManager {
                 const items = e.dataTransfer.items;
                 const files = [];
                 
-                // 處理文件夾
                 for (let i = 0; i < items.length; i++) {
                     const entry = items[i].webkitGetAsEntry();
                     if (entry) {
@@ -258,7 +256,7 @@ class GalleryManager {
         }
     }
     
-    // 遍歷文件樹 (處理文件夾)
+    // 遍歷文件樹
     async traverseFileTree(entry, files) {
         if (entry.isFile) {
             return new Promise((resolve) => {
@@ -283,18 +281,13 @@ class GalleryManager {
     
     // 檢查是否為圖片文件
     isImageFile(file) {
-        // 1. 檢查 MIME 類型
         const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-        
-        // 2. 檢查副檔名（如果 MIME 類型為空）
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff'];
         
-        // 如果 MIME 類型符合
         if (imageTypes.includes(file.type)) {
             return true;
         }
         
-        // 如果 MIME 類型為空，檢查副檔名
         if (!file.type) {
             const fileName = file.name.toLowerCase();
             return imageExtensions.some(ext => fileName.endsWith(ext));
@@ -303,7 +296,7 @@ class GalleryManager {
         return false;
     }
     
-    // 處理選擇的文件
+    // ★ 修改：處理選擇的文件時，先用自然排序排好順序
     handleFiles(files) {
         const imageFiles = files.filter(file => this.isImageFile(file));
         
@@ -312,10 +305,12 @@ class GalleryManager {
             return;
         }
         
+        // ★ 在這裡就先對檔案做自然排序，讓預覽也是正確順序
+        imageFiles.sort((a, b) => this.naturalSort(a.name, b.name));
+        
         this.uploadedFiles = imageFiles;
         this.renderManagementPanel();
         
-        // 自動生成圖庫名稱
         const nameInput = document.getElementById('galleryName');
         if (nameInput && !nameInput.value) {
             const timestamp = new Date().getTime();
@@ -351,15 +346,12 @@ class GalleryManager {
             return;
         }
         
-        // 解析標籤
         const characters = characterInput ? characterInput.split(',').map(tag => tag.trim()).filter(tag => tag) : [];
         const tags = tagsInput ? tagsInput.split(',').map(tag => tag.trim()).filter(tag => tag) : [];
         
-        // 生成唯一 ID
         const newId = `gallery-${Date.now()}`;
         const folderPath = `galleries/${galleryName}`;
         
-        // 顯示進度條
         const progressBar = document.getElementById('uploadProgress');
         const progressFill = document.getElementById('progressFill');
         const progressText = document.getElementById('progressText');
@@ -367,11 +359,9 @@ class GalleryManager {
         if (progressBar) progressBar.style.display = 'block';
         
         try {
-            // 1. 授權
             progressText.textContent = '正在連接 Backblaze B2...';
             await this.b2.authorize();
             
-            // 2. 上傳所有圖片
             const imageFiles = [];
             let uploadedCount = 0;
             
@@ -380,23 +370,18 @@ class GalleryManager {
                 const fileName = file.name;
                 const b2Path = `${folderPath}/${fileName}`;
                 
-                // 更新進度
                 progressText.textContent = `上傳圖片 (${uploadedCount + 1}/${this.uploadedFiles.length}): ${fileName}`;
                 progressFill.style.width = `${((uploadedCount + 1) / this.uploadedFiles.length) * 100}%`;
                 
                 try {
-                    // 上傳到 B2
                     await this.b2.uploadFile(file, b2Path);
                     imageFiles.push(fileName);
                     uploadedCount++;
-                    
                 } catch (uploadError) {
                     console.error(`上傳失敗 ${fileName}:`, uploadError);
-                    // 繼續上傳其他文件
                 }
             }
             
-            // 3. 讀取現有 galleries.json
             progressText.textContent = '正在更新圖庫數據...';
             let galleries = [];
             try {
@@ -406,7 +391,7 @@ class GalleryManager {
                 galleries = [];
             }
             
-            // 4. 添加新圖庫
+            // ★ 修改：使用自然排序而非預設字串排序
             const newGallery = {
                 id: newId,
                 name: galleryName,
@@ -414,36 +399,28 @@ class GalleryManager {
                 character: characters,
                 tags: tags,
                 fileCount: imageFiles.length,
-                imageFiles: imageFiles.sort() // 按名稱排序
+                imageFiles: imageFiles.sort((a, b) => this.naturalSort(a, b))
             };
             
             galleries.push(newGallery);
             
-            // 5. 更新 galleries.json
             await this.b2.updateGalleries(galleries);
             
-            // 6. 完成
             progressText.textContent = '✅ 上傳完成！';
             progressFill.style.width = '100%';
             
-            // 更新本地數據
             this.currentGalleries = galleries;
             
-            // 顯示成功訊息
             setTimeout(() => {
                 alert(`圖庫 "${galleryName}" 上傳成功！\n共上傳 ${uploadedCount} 張圖片。`);
-                
-                // 重置
                 this.uploadedFiles = [];
                 this.switchTab('manage');
-                
             }, 1000);
             
         } catch (error) {
             console.error('上傳過程錯誤:', error);
             progressText.textContent = `❌ 上傳失敗: ${error.message}`;
             progressFill.style.backgroundColor = '#ef4444';
-            
             alert(`上傳失敗: ${error.message}`);
         }
     }
@@ -462,7 +439,6 @@ class GalleryManager {
             Array.isArray(gallery.tags) ? gallery.tags.join(', ') : gallery.tags || '');
         
         try {
-            // 更新圖庫數據
             gallery.name = newName;
             gallery.folderPath = `galleries/${newName}`;
             
@@ -474,7 +450,6 @@ class GalleryManager {
                 gallery.tags = newTags ? newTags.split(',').map(tag => tag.trim()).filter(tag => tag) : [];
             }
             
-            // 更新 B2 上的 galleries.json
             await this.b2.updateGalleries(this.currentGalleries);
             
             alert('圖庫更新成功！');
@@ -495,7 +470,6 @@ class GalleryManager {
         }
         
         try {
-            // 1. 刪除所有圖片文件
             for (const fileName of gallery.imageFiles) {
                 const filePath = `${gallery.folderPath}/${fileName}`;
                 try {
@@ -503,17 +477,12 @@ class GalleryManager {
                     console.log(`已刪除: ${filePath}`);
                 } catch (deleteError) {
                     console.warn(`刪除失敗 ${filePath}:`, deleteError);
-                    // 繼續刪除其他文件
                 }
             }
             
-            // 2. 從數據中移除
             this.currentGalleries.splice(index, 1);
-            
-            // 3. 更新 galleries.json
             await this.b2.updateGalleries(this.currentGalleries);
             
-            // 4. 刷新界面
             alert('圖庫刪除成功！');
             this.renderManagementPanel();
             
@@ -545,13 +514,11 @@ class GalleryManager {
         }
         
         try {
-            // 按倒序刪除，避免索引問題
             const sortedIndices = selectedIndices.sort((a, b) => b - a);
             
             for (const index of sortedIndices) {
                 const gallery = this.currentGalleries[index];
                 
-                // 刪除圖片文件
                 for (const fileName of gallery.imageFiles) {
                     const filePath = `${gallery.folderPath}/${fileName}`;
                     try {
@@ -561,11 +528,9 @@ class GalleryManager {
                     }
                 }
                 
-                // 從數組中移除
                 this.currentGalleries.splice(index, 1);
             }
             
-            // 更新 galleries.json
             await this.b2.updateGalleries(this.currentGalleries);
             
             alert(`批量刪除完成！共刪除 ${selectedIndices.length} 個圖庫。`);
