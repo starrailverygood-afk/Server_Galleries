@@ -1410,3 +1410,127 @@ img {
         grid-template-columns: 1fr;
     }
 }
+
+/* ==================== 設定面板 ==================== */
+
+.btn-settings {
+    background: rgba(71, 85, 105, 0.5);
+    color: #94a3b8;
+    border: 1px solid #475569;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+.btn-settings:hover {
+    background: rgba(71, 85, 105, 0.8);
+    color: #f1f5f9;
+}
+
+.header-right {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.settings-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.72);
+    z-index: 9998;
+}
+.settings-dialog {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%; max-width: 440px;
+    background: #1e293b;
+    border-radius: 16px;
+    z-index: 9999;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0,0,0,.55);
+    animation: settingsIn 0.2s ease;
+}
+@keyframes settingsIn {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 22px;
+    border-bottom: 1px solid #334155;
+}
+.settings-header h2 {
+    margin: 0; color: #f1f5f9;
+    font-size: 17px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+}
+.settings-close {
+    background: none; border: none;
+    color: #94a3b8; font-size: 22px;
+    cursor: pointer; padding: 4px 8px;
+    border-radius: 8px; line-height: 1;
+}
+.settings-close:hover {
+    background: #334155; color: #f1f5f9;
+}
+.settings-body { padding: 16px 22px; }
+.settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 0; gap: 16px;
+}
+.settings-item + .settings-item { border-top: 1px solid #334155; }
+.settings-item-info { flex: 1; }
+.settings-item-title {
+    color: #f1f5f9; font-size: 15px;
+    font-weight: 500; margin-bottom: 4px;
+}
+.settings-item-desc {
+    color: #64748b; font-size: 13px; line-height: 1.4;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px; height: 26px;
+    flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #475569;
+    transition: 0.3s; border-radius: 26px;
+}
+.toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 20px; width: 20px;
+    left: 3px; bottom: 3px;
+    background-color: white;
+    transition: 0.3s; border-radius: 50%;
+}
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #3b82f6;
+}
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(22px);
+}
+
+/* 反轉模式游標 */
+.fullscreen-viewer.reverse-mode .fs-click-left {
+    cursor: e-resize;
+}
+.fullscreen-viewer.reverse-mode .fs-click-right {
+    cursor: w-resize;
+}
