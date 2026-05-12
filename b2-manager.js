@@ -27,7 +27,10 @@ class B2Manager {
         } else if (this.apiKey) {
             options.headers = { 'X-API-Key': this.apiKey };
         }
-        const resp = await fetch(url, options);
+        const resp = await fetch(url, {
+            ...options,
+            cache: 'no-store'    // ← 加這行，防止快取 404
+        });
         if (!resp.ok) {
             const data = await resp.json().catch(() => ({}));
             throw new Error(data.error || `請求失敗 (${resp.status})`);
