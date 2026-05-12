@@ -89,7 +89,7 @@ async function loadGalleryData() {
     try {
         console.log('正在嘗試從 B2 載入圖庫數據...');
         
-        const jsonUrl = buildB2Url('galleries.json');
+        const jsonUrl = buildB2Url('galleries.json') + '?t=' + Date.now();
         
         console.log('載入 URL:', jsonUrl);
         const response = await fetch(jsonUrl, {
