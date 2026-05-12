@@ -1,7 +1,5 @@
-// management.js — 簡化版圖庫管理
-// 支援：建立空白圖庫、單張/多張追加上傳、編輯、刪除
+// management.js — 圖庫管理（含批次刪除）
 
-// ─── 管理面板 CSS ───
 const MGMT_CSS = `
 .mgmt-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.72);z-index:9998}
 .mgmt-dialog{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:680px;max-height:86vh;background:#1e293b;border-radius:16px;z-index:9999;display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(0,0,0,.55);overflow:hidden}
@@ -58,7 +56,22 @@ const MGMT_CSS = `
 .mgmt-confirm-box{background:#1e293b;border-radius:14px;padding:26px;max-width:380px;width:90%;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.45)}
 .mgmt-confirm-box p{color:#e2e8f0;margin:0 0 18px;line-height:1.6}
 .mgmt-confirm-actions{display:flex;gap:10px;justify-content:center}
-@media(max-width:640px){.mgmt-dialog{width:96%;max-height:92vh;border-radius:12px}.mgmt-body{padding:16px}.mgmt-item{flex-direction:column;align-items:stretch}.mgmt-item-actions{justify-content:flex-end;margin-top:8px}}
+
+/* ★ 批次刪除樣式 */
+.mgmt-batch-section{margin-top:16px;border-top:1px solid #334155;padding-top:16px}
+.mgmt-batch-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
+.mgmt-batch-header h4{color:#e2e8f0;font-size:14px;margin:0;font-weight:600}
+.mgmt-batch-actions{display:flex;gap:6px;flex-wrap:wrap}
+.mgmt-batch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;max-height:320px;overflow-y:auto;padding:4px}
+.mgmt-batch-item{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid #334155;transition:all .15s}
+.mgmt-batch-item:hover{border-color:#64748b}
+.mgmt-batch-item.selected{border-color:#ef4444;box-shadow:0 0 8px rgba(239,68,68,.35)}
+.mgmt-batch-item img{width:100%;height:100%;object-fit:cover;display:block}
+.mgmt-batch-check{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;color:transparent;font-size:11px;transition:all .15s;pointer-events:none}
+.mgmt-batch-item.selected .mgmt-batch-check{background:#ef4444;border-color:#ef4444;color:#fff}
+.mgmt-batch-count{color:#94a3b8;font-size:12px;margin-top:8px}
+
+@media(max-width:640px){.mgmt-dialog{width:96%;max-height:92vh;border-radius:12px}.mgmt-body{padding:16px}.mgmt-item{flex-direction:column;align-items:stretch}.mgmt-item-actions{justify-content:flex-end;margin-top:8px}.mgmt-batch-grid{grid-template-columns:repeat(auto-fill,minmax(70px,1fr))}}
 `;
 
 class GalleryManager {
@@ -71,6 +84,7 @@ class GalleryManager {
         this.creating = false;
         this.targetId = '';
         this.uploading = false;
+        this.selectedImages = new Set(); // ★ 批次刪除選取
     }
 
     // ─── 初始化 ───
@@ -136,7 +150,6 @@ class GalleryManager {
     renderGalleries() {
         let html = '';
 
-        // 新增圖庫
         if (this.creating) {
             html += this.renderForm();
         } else {
@@ -169,7 +182,7 @@ class GalleryManager {
                             <button class="mgmt-btn primary sm" onclick="galleryManager.goUpload('${g.id}')" title="上傳圖片">
                                 <i class="fas fa-upload"></i>
                             </button>
-                            <button class="mgmt-btn ghost sm" onclick="galleryManager.editIdx=${i};galleryManager.render()" title="編輯">
+                            <button class="mgmt-btn ghost sm" onclick="galleryManager.startEdit(${i})" title="編輯">
                                 <i class="fas fa-edit"></i>
                             </button>
                             <button class="mgmt-btn danger sm" onclick="galleryManager.confirmDel(${i})" title="刪除">
@@ -183,14 +196,21 @@ class GalleryManager {
         return html;
     }
 
-    // 共用表單（新增 / 編輯）
+    // ★ 新增：進入編輯模式（重置選取）
+    startEdit(index) {
+        this.editIdx = index;
+        this.selectedImages = new Set();
+        this.render();
+    }
+
+    // 共用表單（新增 / 編輯）— ★ 編輯時多了批次刪除區塊
     renderForm(gallery = null, index = -1) {
         const isEdit = gallery !== null;
         const name = isEdit ? gallery.name : '';
         const chars = isEdit ? (gallery.character || []).join(', ') : '';
         const tags = isEdit ? (gallery.tags || []).join(', ') : '';
 
-        return `
+        let html = `
             <div class="mgmt-form">
                 <h3>${isEdit ? '編輯圖庫' : '新增圖庫'}</h3>
                 <div class="mgmt-field">
@@ -210,8 +230,158 @@ class GalleryManager {
                         ${isEdit ? '儲存變更' : '建立圖庫'}
                     </button>
                     <button class="mgmt-btn ghost" onclick="galleryManager.cancelForm()">取消</button>
+                </div>`;
+
+        // ★ 編輯模式 + 有圖片時，顯示批次刪除區塊
+        if (isEdit && gallery.imageFiles && gallery.imageFiles.length > 0) {
+            html += `
+                <div class="mgmt-batch-section">
+                    <div class="mgmt-batch-header">
+                        <h4><i class="fas fa-images"></i> 批次刪除圖片（${gallery.imageFiles.length} 張）</h4>
+                        <div class="mgmt-batch-actions">
+                            <button class="mgmt-btn ghost sm" onclick="galleryManager.selectAllImages()">
+                                <i class="fas fa-check-double"></i> 全選
+                            </button>
+                            <button class="mgmt-btn ghost sm" onclick="galleryManager.deselectAllImages()">
+                                <i class="fas fa-times"></i> 取消全選
+                            </button>
+                            <button class="mgmt-btn danger sm" id="mgmtBatchDeleteBtn" disabled
+                                    onclick="galleryManager.confirmBatchDelete()">
+                                <i class="fas fa-trash"></i> <span id="mgmtBatchDeleteText">刪除選中</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mgmt-batch-grid">
+                        ${gallery.imageFiles.map((file, idx) => {
+                            const url = this.getImageUrl(gallery, file);
+                            const selected = this.selectedImages.has(idx) ? ' selected' : '';
+                            return `<div class="mgmt-batch-item${selected}" data-idx="${idx}"
+                                         onclick="galleryManager.toggleSelect(${idx})">
+                                <img src="${url}" alt="${this.esc(file)}" loading="lazy"
+                                     onerror="this.style.display='none'">
+                                <div class="mgmt-batch-check"><i class="fas fa-check"></i></div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                    <div class="mgmt-batch-count" id="mgmtBatchCount">
+                        已選擇 ${this.selectedImages.size} 張
+                    </div>
+                </div>`;
+        }
+
+        html += `</div>`;
+        return html;
+    }
+
+    // ★ 新增：取得圖片 URL
+    getImageUrl(gallery, fileName) {
+        const basePath = (gallery.folderPath || '').replace(/^\/+|\/+$/g, '');
+        return `https://f005.backblazeb2.com/file/laserpen-gallery-bucket/${basePath}/${fileName}`;
+    }
+
+    // ★ 新增：切換單張選取（不重新渲染，直接操作 DOM）
+    toggleSelect(idx) {
+        if (this.selectedImages.has(idx)) {
+            this.selectedImages.delete(idx);
+        } else {
+            this.selectedImages.add(idx);
+        }
+        const item = document.querySelector(`.mgmt-batch-item[data-idx="${idx}"]`);
+        if (item) item.classList.toggle('selected', this.selectedImages.has(idx));
+        this.updateBatchCount();
+    }
+
+    // ★ 新增：全選
+    selectAllImages() {
+        const gallery = this.galleries[this.editIdx];
+        if (!gallery) return;
+        for (let i = 0; i < gallery.imageFiles.length; i++) {
+            this.selectedImages.add(i);
+        }
+        document.querySelectorAll('.mgmt-batch-item').forEach(el => el.classList.add('selected'));
+        this.updateBatchCount();
+    }
+
+    // ★ 新增：取消全選
+    deselectAllImages() {
+        this.selectedImages.clear();
+        document.querySelectorAll('.mgmt-batch-item').forEach(el => el.classList.remove('selected'));
+        this.updateBatchCount();
+    }
+
+    // ★ 新增：更新選取數量顯示
+    updateBatchCount() {
+        const count = this.selectedImages.size;
+        const countEl = document.getElementById('mgmtBatchCount');
+        if (countEl) countEl.textContent = `已選擇 ${count} 張`;
+
+        const btn = document.getElementById('mgmtBatchDeleteBtn');
+        if (btn) btn.disabled = count === 0;
+
+        const text = document.getElementById('mgmtBatchDeleteText');
+        if (text) text.textContent = count > 0 ? `刪除選中 (${count})` : '刪除選中';
+    }
+
+    // ★ 新增：批次刪除確認
+    confirmBatchDelete() {
+        const count = this.selectedImages.size;
+        if (count === 0) return;
+
+        const bg = document.createElement('div');
+        bg.className = 'mgmt-confirm-bg';
+        bg.innerHTML = `
+            <div class="mgmt-confirm-box">
+                <p>確定要刪除選中的<br><strong style="color:#f87171">${count} 張圖片</strong>？<br>
+                <span style="color:#94a3b8;font-size:13px">刪除後無法恢復</span></p>
+                <div class="mgmt-confirm-actions">
+                    <button class="mgmt-btn danger" id="mgmtBatchYes">確定刪除</button>
+                    <button class="mgmt-btn ghost" id="mgmtBatchNo">取消</button>
                 </div>
             </div>`;
+        document.body.appendChild(bg);
+        document.getElementById('mgmtBatchYes').onclick = () => { bg.remove(); this.doBatchDelete(); };
+        document.getElementById('mgmtBatchNo').onclick = () => bg.remove();
+        bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
+    }
+
+    // ★ 新增：執行批次刪除
+    async doBatchDelete() {
+        if (this.selectedImages.size === 0) return;
+
+        const gallery = this.galleries[this.editIdx];
+        if (!gallery) return;
+
+        this.toast('正在刪除圖片...', 'info');
+
+        // 按降序排列索引（這樣 splice 不會影響前面的索引）
+        const indicesToDelete = Array.from(this.selectedImages).sort((a, b) => b - a);
+        const filesToDelete = indicesToDelete.map(idx => gallery.imageFiles[idx]);
+
+        let successCount = 0;
+        for (const file of filesToDelete) {
+            try {
+                await this.b2.deleteFile(gallery.folderPath + '/' + file);
+                successCount++;
+            } catch (e) {
+                console.warn('刪除文件失敗:', file, e);
+            }
+        }
+
+        // 從 imageFiles 移除（降序 splice）
+        for (const idx of indicesToDelete) {
+            gallery.imageFiles.splice(idx, 1);
+        }
+        gallery.fileCount = gallery.imageFiles.length;
+
+        try {
+            await this.b2.updateGalleries(this.galleries);
+            this.toast(`成功刪除 ${successCount} 張圖片`, 'success');
+        } catch (e) {
+            this.toast('更新數據失敗: ' + e.message, 'error');
+        }
+
+        this.selectedImages = new Set();
+        this.render();
     }
 
     async saveForm(index) {
@@ -223,7 +393,6 @@ class GalleryManager {
 
         try {
             if (index === -1) {
-                // 新增
                 this.galleries.push({
                     id: 'gallery-' + Date.now(),
                     name: name,
@@ -234,7 +403,6 @@ class GalleryManager {
                     imageFiles: []
                 });
             } else {
-                // 編輯（不改 folderPath，避免破壞圖片連結）
                 const g = this.galleries[index];
                 g.name = name;
                 g.character = chars;
@@ -244,6 +412,7 @@ class GalleryManager {
             await this.b2.updateGalleries(this.galleries);
             this.creating = false;
             this.editIdx = -1;
+            this.selectedImages = new Set(); // ★ 重置選取
             this.toast(index === -1 ? '圖庫「' + name + '」已建立' : '更新成功', 'success');
             this.render();
         } catch (e) {
@@ -255,10 +424,10 @@ class GalleryManager {
     cancelForm() {
         this.creating = false;
         this.editIdx = -1;
+        this.selectedImages = new Set(); // ★ 重置選取
         this.render();
     }
 
-    // 刪除確認
     confirmDel(index) {
         const g = this.galleries[index];
         const bg = document.createElement('div');
@@ -282,13 +451,9 @@ class GalleryManager {
         const g = this.galleries[index];
         this.toast('正在刪除...', 'info');
         try {
-            // 刪除 B2 上的圖片文件
             for (const f of (g.imageFiles || [])) {
-                try {
-                    await this.b2.deleteFile(g.folderPath + '/' + f);
-                } catch (e) {
-                    console.warn('刪除文件失敗:', f, e);
-                }
+                try { await this.b2.deleteFile(g.folderPath + '/' + f); }
+                catch (e) { console.warn('刪除文件失敗:', f, e); }
             }
             this.galleries.splice(index, 1);
             await this.b2.updateGalleries(this.galleries);
@@ -318,7 +483,6 @@ class GalleryManager {
                     ).join('')}
                 </select>
             </div>
-
             <div class="mgmt-dropzone" id="mgmtDrop">
                 <div class="mgmt-dropzone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
                 <div class="mgmt-dropzone-text">拖放圖片到這裡，或點擊選擇</div>
@@ -328,9 +492,7 @@ class GalleryManager {
 
         if (this.files.length > 0) {
             html += `
-                <div style="color:#94a3b8;font-size:13px;margin-bottom:6px">
-                    已選擇 ${this.files.length} 個文件
-                </div>
+                <div style="color:#94a3b8;font-size:13px;margin-bottom:6px">已選擇 ${this.files.length} 個文件</div>
                 <div class="mgmt-preview">
                     ${this.files.map((f, i) =>
                         '<div class="mgmt-preview-item">' +
@@ -351,9 +513,7 @@ class GalleryManager {
 
         html += `
             <div id="mgmtProg" style="display:none;margin-top:12px">
-                <div class="mgmt-progress-bar">
-                    <div class="mgmt-progress-fill" id="mgmtFill"></div>
-                </div>
+                <div class="mgmt-progress-bar"><div class="mgmt-progress-fill" id="mgmtFill"></div></div>
                 <div class="mgmt-status" id="mgmtStatTxt"></div>
             </div>`;
 
@@ -369,14 +529,10 @@ class GalleryManager {
         drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('dragover'); };
         drop.ondragleave = () => drop.classList.remove('dragover');
         drop.ondrop = (e) => {
-            e.preventDefault();
-            drop.classList.remove('dragover');
+            e.preventDefault(); drop.classList.remove('dragover');
             this.addFiles(Array.from(e.dataTransfer.files));
         };
-        input.onchange = (e) => {
-            this.addFiles(Array.from(e.target.files));
-            e.target.value = '';  // 允許再次選擇同一文件
-        };
+        input.onchange = (e) => { this.addFiles(Array.from(e.target.files)); e.target.value = ''; };
     }
 
     addFiles(incoming) {
@@ -386,15 +542,8 @@ class GalleryManager {
         this.render();
     }
 
-    removeFile(i) {
-        this.files.splice(i, 1);
-        this.render();
-    }
-
-    clearFiles() {
-        this.files = [];
-        this.render();
-    }
+    removeFile(i) { this.files.splice(i, 1); this.render(); }
+    clearFiles() { this.files = []; this.render(); }
 
     async startUpload() {
         const targetId = document.getElementById('mgmtTarget')?.value;
@@ -418,16 +567,12 @@ class GalleryManager {
         for (let i = 0; i < this.files.length; i++) {
             const file = this.files[i];
             const filePath = gallery.folderPath + '/' + file.name;
-
             if (textEl) textEl.textContent = '上傳 (' + (i + 1) + '/' + this.files.length + '): ' + file.name;
             if (fillEl) fillEl.style.width = ((i + 1) / this.files.length * 100) + '%';
 
             try {
                 await this.b2.uploadFile(file, filePath);
-                // 避免重複加入
-                if (!gallery.imageFiles.includes(file.name)) {
-                    newFileNames.push(file.name);
-                }
+                if (!gallery.imageFiles.includes(file.name)) newFileNames.push(file.name);
                 successCount++;
             } catch (e) {
                 console.error('上傳失敗 ' + file.name + ':', e);
@@ -435,11 +580,9 @@ class GalleryManager {
             }
         }
 
-        // 更新圖庫數據
         if (newFileNames.length > 0) {
             gallery.imageFiles = [...gallery.imageFiles, ...newFileNames];
             gallery.fileCount = gallery.imageFiles.length;
-
             try {
                 if (textEl) textEl.textContent = '更新圖庫數據...';
                 await this.b2.updateGalleries(this.galleries);
@@ -472,7 +615,6 @@ class GalleryManager {
     }
 
     toast(msg, type = 'info') {
-        // 移除已有的 toast
         document.querySelectorAll('.mgmt-toast').forEach(el => el.remove());
         const el = document.createElement('div');
         el.className = 'mgmt-toast ' + type;
@@ -494,7 +636,6 @@ function openManagementPage() {
 function closeManagementPanel() {
     document.getElementById('managementPanel').style.display = 'none';
 
-    // 關閉後自動刷新首頁圖庫列表
     if (typeof loadGalleryData === 'function') {
         loadGalleryData().then(() => {
             if (typeof processGalleryCovers === 'function') processGalleryCovers();
