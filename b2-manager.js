@@ -4,7 +4,7 @@
 class B2Manager {
     constructor() {
         // ⚠️ 替換為你部署的 Worker URL
-        this.workerUrl = 'https://b2-proxy.你的帳號.workers.dev';
+        this.workerUrl = 'https://b2proxy.wongsanki.workers.dev/';
 
         // 公開下載 URL（讀取圖片用，不需要代理）
         this.downloadBaseUrl = 'https://f005.backblazeb2.com/file/laserpen-gallery-bucket/';
