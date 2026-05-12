@@ -87,21 +87,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 // 動態載入圖庫數據
 async function loadGalleryData() {
     try {
-        console.log('正在嘗試從 B2 載入圖庫數據...');
+        console.log('正在透過 Worker 載入圖庫數據...');
         
-        const jsonUrl = buildB2Url('galleries.json') + '?t=' + Date.now();
-        
-        console.log('載入 URL:', jsonUrl);
-        const response = await fetch(jsonUrl, {
-            cache: 'no-store'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        const data = await response.json();
-        console.log('成功獲取 JSON 數據，共', data.length, '個圖庫');
+        const data = await b2Manager.readGalleries();
+        console.log('成功獲取數據，共', data.length, '個圖庫');
         
         if (Array.isArray(data)) {
             galleryDatabase = data;
@@ -127,7 +116,7 @@ async function loadGalleryData() {
         });
         
     } catch (error) {
-        console.error('載入 JSON 失敗:', error);
+        console.error('載入圖庫失敗:', error);
         throw error;
     }
 }
