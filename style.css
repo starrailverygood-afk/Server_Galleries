@@ -1411,14 +1411,163 @@ img {
     }
 }
 
-/* ==================== 設定面板 ==================== */
+/* ════════════════════════════════════════
+   ★ 設定面板
+   ════════════════════════════════════════ */
 
-.btn-settings {
-    background: rgba(71, 85, 105, 0.5);
+#settingsPanel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 5000;
+}
+
+.settings-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+.settings-dialog {
+    position: relative;
+    width: 90%;
+    max-width: 440px;
+    margin: 15vh auto 0;
+    background: #1e293b;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid #334155;
+}
+
+.settings-header h2 {
+    margin: 0;
+    color: #f1f5f9;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.settings-close {
+    background: none;
+    border: none;
     color: #94a3b8;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    line-height: 1;
+}
+
+.settings-close:hover {
+    background: #334155;
+    color: #f1f5f9;
+}
+
+.settings-body {
+    padding: 20px 24px;
+}
+
+.settings-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 0;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.3);
+    gap: 16px;
+}
+
+.settings-item:last-child {
+    border-bottom: none;
+}
+
+.settings-item-info {
+    flex: 1;
+}
+
+.settings-item-info h4 {
+    margin: 0 0 4px;
+    color: #f1f5f9;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.settings-item-info p {
+    margin: 0;
+    color: #94a3b8;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #475569;
+    border-radius: 28px;
+    transition: all 0.3s;
+}
+
+.toggle-slider::before {
+    content: "";
+    position: absolute;
+    height: 22px;
+    width: 22px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #3b82f6;
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(24px);
+}
+
+/* Settings 按鈕 */
+.btn-settings {
+    background-color: #334155;
+    color: #cbd5e1;
     border: 1px solid #475569;
-    width: 40px;
-    height: 40px;
+    width: 42px;
+    height: 42px;
     border-radius: 8px;
     cursor: pointer;
     display: flex;
@@ -1427,110 +1576,30 @@ img {
     font-size: 16px;
     transition: all 0.2s;
 }
+
 .btn-settings:hover {
-    background: rgba(71, 85, 105, 0.8);
-    color: #f1f5f9;
-}
-
-.header-right {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-}
-
-.settings-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.72);
-    z-index: 9998;
-}
-.settings-dialog {
-    position: fixed;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 90%; max-width: 440px;
-    background: #1e293b;
-    border-radius: 16px;
-    z-index: 9999;
-    overflow: hidden;
-    box-shadow: 0 25px 60px rgba(0,0,0,.55);
-    animation: settingsIn 0.2s ease;
-}
-@keyframes settingsIn {
-    from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
-    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-.settings-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 22px;
-    border-bottom: 1px solid #334155;
-}
-.settings-header h2 {
-    margin: 0; color: #f1f5f9;
-    font-size: 17px; font-weight: 600;
-    display: flex; align-items: center; gap: 8px;
-}
-.settings-close {
-    background: none; border: none;
-    color: #94a3b8; font-size: 22px;
-    cursor: pointer; padding: 4px 8px;
-    border-radius: 8px; line-height: 1;
-}
-.settings-close:hover {
-    background: #334155; color: #f1f5f9;
-}
-.settings-body { padding: 16px 22px; }
-.settings-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 14px 0; gap: 16px;
-}
-.settings-item + .settings-item { border-top: 1px solid #334155; }
-.settings-item-info { flex: 1; }
-.settings-item-title {
-    color: #f1f5f9; font-size: 15px;
-    font-weight: 500; margin-bottom: 4px;
-}
-.settings-item-desc {
-    color: #64748b; font-size: 13px; line-height: 1.4;
-}
-
-/* Toggle Switch */
-.toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 48px; height: 26px;
-    flex-shrink: 0;
-}
-.toggle-switch input { opacity: 0; width: 0; height: 0; }
-.toggle-slider {
-    position: absolute; cursor: pointer;
-    top: 0; left: 0; right: 0; bottom: 0;
     background-color: #475569;
-    transition: 0.3s; border-radius: 26px;
-}
-.toggle-slider::before {
-    content: '';
-    position: absolute;
-    height: 20px; width: 20px;
-    left: 3px; bottom: 3px;
-    background-color: white;
-    transition: 0.3s; border-radius: 50%;
-}
-.toggle-switch input:checked + .toggle-slider {
-    background-color: #3b82f6;
-}
-.toggle-switch input:checked + .toggle-slider::before {
-    transform: translateX(22px);
+    color: #f1f5f9;
+    border-color: #64748b;
 }
 
-/* 反轉模式游標 */
-.fullscreen-viewer.reverse-mode .fs-click-left {
+/* ★ 反轉模式游標 */
+.fullscreen-viewer.reversed .fs-click-left {
     cursor: e-resize;
 }
-.fullscreen-viewer.reverse-mode .fs-click-right {
+
+.fullscreen-viewer.reversed .fs-click-right {
     cursor: w-resize;
+}
+
+/* 響應式：設定面板 */
+@media (max-width: 480px) {
+    .settings-dialog {
+        width: 95%;
+        margin-top: 10vh;
+    }
+
+    .settings-body {
+        padding: 16px;
+    }
 }
