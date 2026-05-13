@@ -1,5 +1,3 @@
-// management.js — 圖庫管理（含批次刪除）
-
 const MGMT_CSS = `
 .mgmt-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.72);z-index:9998}
 .mgmt-dialog{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:92%;max-width:680px;max-height:86vh;background:#1e293b;border-radius:16px;z-index:9999;display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(0,0,0,.55);overflow:hidden}
@@ -56,8 +54,6 @@ const MGMT_CSS = `
 .mgmt-confirm-box{background:#1e293b;border-radius:14px;padding:26px;max-width:380px;width:90%;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.45)}
 .mgmt-confirm-box p{color:#e2e8f0;margin:0 0 18px;line-height:1.6}
 .mgmt-confirm-actions{display:flex;gap:10px;justify-content:center}
-
-/* ★ 批次刪除樣式 */
 .mgmt-batch-section{margin-top:16px;border-top:1px solid #334155;padding-top:16px}
 .mgmt-batch-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
 .mgmt-batch-header h4{color:#e2e8f0;font-size:14px;margin:0;font-weight:600}
@@ -70,13 +66,17 @@ const MGMT_CSS = `
 .mgmt-batch-check{position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);border:2px solid rgba(255,255,255,.4);display:flex;align-items:center;justify-content:center;color:transparent;font-size:11px;transition:all .15s;pointer-events:none}
 .mgmt-batch-item.selected .mgmt-batch-check{background:#ef4444;border-color:#ef4444;color:#fff}
 .mgmt-batch-count{color:#94a3b8;font-size:12px;margin-top:8px}
-
+.mgmt-cover-row{display:flex;gap:8px;align-items:center}
+.mgmt-cover-row input{flex:1}
+.mgmt-cover-preview{margin-top:8px}
+.mgmt-cover-preview img{max-width:120px;max-height:80px;border-radius:6px;border:1px solid #334155}
 @media(max-width:640px){.mgmt-dialog{width:96%;max-height:92vh;border-radius:12px}.mgmt-body{padding:16px}.mgmt-item{flex-direction:column;align-items:stretch}.mgmt-item-actions{justify-content:flex-end;margin-top:8px}.mgmt-batch-grid{grid-template-columns:repeat(auto-fill,minmax(70px,1fr))}}
 `;
 
 class GalleryManager {
     constructor() {
         this.galleries = [];
+        this.videos = [];
         this.b2 = b2Manager;
         this.files = [];
         this.tab = 'galleries';
@@ -84,547 +84,417 @@ class GalleryManager {
         this.creating = false;
         this.targetId = '';
         this.uploading = false;
-        this.selectedImages = new Set(); // ★ 批次刪除選取
+        this.selectedImages = new Set();
+        // 影片
+        this.videoEditIdx = -1;
+        this.videoCreating = false;
     }
 
-    // ─── 初始化 ───
-
     injectStyles() {
-        if (document.getElementById('mgmt-css')) return;
-        const el = document.createElement('style');
-        el.id = 'mgmt-css';
-        el.textContent = MGMT_CSS;
-        document.head.appendChild(el);
+        if (!document.getElementById('mgmt-css')) {
+            const el = document.createElement('style');
+            el.id = 'mgmt-css';
+            el.textContent = MGMT_CSS;
+            document.head.appendChild(el);
+        }
     }
 
     async init() {
         this.injectStyles();
-        try {
-            this.galleries = await this.b2.readGalleries();
-        } catch (e) {
-            console.error('載入圖庫失敗:', e);
-            this.galleries = [];
-        }
+        try { this.galleries = await this.b2.readGalleries(); } catch { this.galleries = []; }
+        try { this.videos = await this.b2.readVideos(); } catch { this.videos = []; }
         this.render();
     }
 
-    // ─── 渲染 ───
-
+    // ═══ 主渲染 ═══
     render() {
         const panel = document.getElementById('managementPanel');
         if (!panel) return;
-
         panel.innerHTML = `
             <div class="mgmt-overlay" onclick="closeManagementPanel()"></div>
             <div class="mgmt-dialog">
                 <div class="mgmt-header">
-                    <h2><i class="fas fa-folder-open"></i> 圖庫管理</h2>
+                    <h2><i class="fas fa-cog"></i> 管理面板</h2>
                     <button class="mgmt-close" onclick="closeManagementPanel()">✕</button>
                 </div>
                 <div class="mgmt-tabs">
-                    <button class="mgmt-tab ${this.tab === 'galleries' ? 'active' : ''}"
-                            onclick="galleryManager.switchTab('galleries')">
+                    <button class="mgmt-tab ${this.tab === 'galleries' ? 'active' : ''}" onclick="galleryManager.switchTab('galleries')">
                         <i class="fas fa-th-list"></i> 圖庫總覽
                     </button>
-                    <button class="mgmt-tab ${this.tab === 'upload' ? 'active' : ''}"
-                            onclick="galleryManager.switchTab('upload')">
+                    <button class="mgmt-tab ${this.tab === 'upload' ? 'active' : ''}" onclick="galleryManager.switchTab('upload')">
                         <i class="fas fa-upload"></i> 上傳圖片
+                    </button>
+                    <button class="mgmt-tab ${this.tab === 'videos' ? 'active' : ''}" onclick="galleryManager.switchTab('videos')">
+                        <i class="fas fa-film"></i> 影片鏈接
                     </button>
                 </div>
                 <div class="mgmt-body">
-                    ${this.tab === 'galleries' ? this.renderGalleries() : this.renderUpload()}
+                    ${this.tab === 'galleries' ? this.renderGalleries() : this.tab === 'upload' ? this.renderUpload() : this.renderVideos()}
                 </div>
-            </div>
-        `;
-
+            </div>`;
         if (this.tab === 'upload') this.bindDropzone();
     }
 
-    switchTab(tab) {
-        this.tab = tab;
-        this.render();
-    }
+    switchTab(tab) { this.tab = tab; this.render(); }
 
-    // ─── 圖庫總覽 Tab ───
-
+    // ═══ 圖庫總覽 ═══
     renderGalleries() {
         let html = '';
-
         if (this.creating) {
-            html += this.renderForm();
+            html += this.renderGalleryForm();
         } else {
-            html += `
-                <button class="mgmt-btn primary" style="width:100%;padding:11px;margin-bottom:14px"
-                        onclick="galleryManager.creating=true;galleryManager.render()">
-                    <i class="fas fa-plus"></i> 新增空白圖庫
-                </button>`;
+            html += `<button class="mgmt-btn primary" style="width:100%;padding:11px;margin-bottom:14px" onclick="galleryManager.creating=true;galleryManager.render()"><i class="fas fa-plus"></i> 新增空白圖庫</button>`;
         }
-
-        if (this.galleries.length === 0 && !this.creating) {
-            html += '<div class="mgmt-empty">還沒有任何圖庫，點擊上方按鈕建立</div>';
-        }
-
+        if (this.galleries.length === 0 && !this.creating) html += '<div class="mgmt-empty">還沒有任何圖庫</div>';
         this.galleries.forEach((g, i) => {
-            if (this.editIdx === i) {
-                html += this.renderForm(g, i);
-            } else {
+            if (this.editIdx === i) { html += this.renderGalleryForm(g, i); }
+            else {
                 const chars = (g.character || []).join(', ');
                 const tags = (g.tags || []).join(', ');
-                html += `
-                    <div class="mgmt-item">
-                        <div class="mgmt-item-info">
-                            <h4>${this.esc(g.name)}</h4>
-                            <div class="mgmt-item-meta">
-                                ${g.fileCount || 0} 張${chars ? ' · ' + this.esc(chars) : ''}${tags ? ' · ' + this.esc(tags) : ''}
-                            </div>
-                        </div>
-                        <div class="mgmt-item-actions">
-                            <button class="mgmt-btn primary sm" onclick="galleryManager.goUpload('${g.id}')" title="上傳圖片">
-                                <i class="fas fa-upload"></i>
-                            </button>
-                            <button class="mgmt-btn ghost sm" onclick="galleryManager.startEdit(${i})" title="編輯">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="mgmt-btn danger sm" onclick="galleryManager.confirmDel(${i})" title="刪除">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>`;
+                html += `<div class="mgmt-item"><div class="mgmt-item-info"><h4>${this.esc(g.name)}</h4><div class="mgmt-item-meta">${g.fileCount || 0} 張${chars ? ' · ' + this.esc(chars) : ''}${tags ? ' · ' + this.esc(tags) : ''}</div></div>
+                    <div class="mgmt-item-actions">
+                        <button class="mgmt-btn primary sm" onclick="galleryManager.goUpload('${g.id}')"><i class="fas fa-upload"></i></button>
+                        <button class="mgmt-btn ghost sm" onclick="galleryManager.startEdit(${i})"><i class="fas fa-edit"></i></button>
+                        <button class="mgmt-btn danger sm" onclick="galleryManager.confirmDel(${i})"><i class="fas fa-trash"></i></button>
+                    </div></div>`;
             }
         });
-
         return html;
     }
 
-    // ★ 新增：進入編輯模式（重置選取）
-    startEdit(index) {
-        this.editIdx = index;
-        this.selectedImages = new Set();
-        this.render();
-    }
+    startEdit(i) { this.editIdx = i; this.selectedImages = new Set(); this.render(); }
 
-    // 共用表單（新增 / 編輯）— ★ 編輯時多了批次刪除區塊
-    renderForm(gallery = null, index = -1) {
+    renderGalleryForm(gallery = null, index = -1) {
         const isEdit = gallery !== null;
         const name = isEdit ? gallery.name : '';
         const chars = isEdit ? (gallery.character || []).join(', ') : '';
         const tags = isEdit ? (gallery.tags || []).join(', ') : '';
-
-        let html = `
-            <div class="mgmt-form">
-                <h3>${isEdit ? '編輯圖庫' : '新增圖庫'}</h3>
-                <div class="mgmt-field">
-                    <label>圖庫名稱 *</label>
-                    <input type="text" id="mgmtName" value="${this.esc(name)}" placeholder="例如: 甘雨-7-新圖庫">
-                </div>
-                <div class="mgmt-field">
-                    <label>角色標籤（逗號分隔）</label>
-                    <input type="text" id="mgmtChars" value="${this.esc(chars)}" placeholder="例如: 甘雨, 刻晴">
-                </div>
-                <div class="mgmt-field">
-                    <label>其他標籤（逗號分隔）</label>
-                    <input type="text" id="mgmtTags" value="${this.esc(tags)}" placeholder="例如: 正常, 日常">
-                </div>
-                <div class="mgmt-form-actions">
-                    <button class="mgmt-btn primary" onclick="galleryManager.saveForm(${index})">
-                        ${isEdit ? '儲存變更' : '建立圖庫'}
-                    </button>
-                    <button class="mgmt-btn ghost" onclick="galleryManager.cancelForm()">取消</button>
-                </div>`;
-
-        // ★ 編輯模式 + 有圖片時，顯示批次刪除區塊
+        let html = `<div class="mgmt-form"><h3>${isEdit ? '編輯圖庫' : '新增圖庫'}</h3>
+            <div class="mgmt-field"><label>圖庫名稱 *</label><input type="text" id="mgmtName" value="${this.esc(name)}" placeholder="例如: 甘雨-新圖庫"></div>
+            <div class="mgmt-field"><label>角色標籤（逗號分隔）</label><input type="text" id="mgmtChars" value="${this.esc(chars)}" placeholder="例如: 甘雨, 刻晴"></div>
+            <div class="mgmt-field"><label>其他標籤（逗號分隔）</label><input type="text" id="mgmtTags" value="${this.esc(tags)}" placeholder="例如: 正常, 日常"></div>
+            <div class="mgmt-form-actions">
+                <button class="mgmt-btn primary" onclick="galleryManager.saveGalleryForm(${index})">${isEdit ? '儲存變更' : '建立圖庫'}</button>
+                <button class="mgmt-btn ghost" onclick="galleryManager.cancelForm()">取消</button>
+            </div>`;
         if (isEdit && gallery.imageFiles && gallery.imageFiles.length > 0) {
-            html += `
-                <div class="mgmt-batch-section">
-                    <div class="mgmt-batch-header">
-                        <h4><i class="fas fa-images"></i> 批次刪除圖片（${gallery.imageFiles.length} 張）</h4>
-                        <div class="mgmt-batch-actions">
-                            <button class="mgmt-btn ghost sm" onclick="galleryManager.selectAllImages()">
-                                <i class="fas fa-check-double"></i> 全選
-                            </button>
-                            <button class="mgmt-btn ghost sm" onclick="galleryManager.deselectAllImages()">
-                                <i class="fas fa-times"></i> 取消全選
-                            </button>
-                            <button class="mgmt-btn danger sm" id="mgmtBatchDeleteBtn" disabled
-                                    onclick="galleryManager.confirmBatchDelete()">
-                                <i class="fas fa-trash"></i> <span id="mgmtBatchDeleteText">刪除選中</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="mgmt-batch-grid">
-                        ${gallery.imageFiles.map((file, idx) => {
-                            const url = this.getImageUrl(gallery, file);
-                            const selected = this.selectedImages.has(idx) ? ' selected' : '';
-                            return `<div class="mgmt-batch-item${selected}" data-idx="${idx}"
-                                         onclick="galleryManager.toggleSelect(${idx})">
-                                <img src="${url}" alt="${this.esc(file)}" loading="lazy"
-                                     onerror="this.style.display='none'">
-                                <div class="mgmt-batch-check"><i class="fas fa-check"></i></div>
-                            </div>`;
-                        }).join('')}
-                    </div>
-                    <div class="mgmt-batch-count" id="mgmtBatchCount">
-                        已選擇 ${this.selectedImages.size} 張
-                    </div>
-                </div>`;
+            html += `<div class="mgmt-batch-section"><div class="mgmt-batch-header"><h4><i class="fas fa-images"></i> 批次刪除圖片（${gallery.imageFiles.length} 張）</h4>
+                <div class="mgmt-batch-actions">
+                    <button class="mgmt-btn ghost sm" onclick="galleryManager.selectAllImages()"><i class="fas fa-check-double"></i> 全選</button>
+                    <button class="mgmt-btn ghost sm" onclick="galleryManager.deselectAllImages()"><i class="fas fa-times"></i> 取消全選</button>
+                    <button class="mgmt-btn danger sm" id="mgmtBatchDeleteBtn" disabled onclick="galleryManager.confirmBatchDelete()"><i class="fas fa-trash"></i> <span id="mgmtBatchDeleteText">刪除選中</span></button>
+                </div></div>
+                <div class="mgmt-batch-grid">${gallery.imageFiles.map((f, idx) => {
+                    const url = this.getImageUrl(gallery, f);
+                    const sel = this.selectedImages.has(idx) ? ' selected' : '';
+                    return `<div class="mgmt-batch-item${sel}" data-idx="${idx}" onclick="galleryManager.toggleSelect(${idx})"><img src="${url}" loading="lazy" onerror="this.style.display='none'"><div class="mgmt-batch-check"><i class="fas fa-check"></i></div></div>`;
+                }).join('')}</div>
+                <div class="mgmt-batch-count" id="mgmtBatchCount">已選擇 ${this.selectedImages.size} 張</div></div>`;
         }
-
-        html += `</div>`;
+        html += '</div>';
         return html;
     }
 
-    // ★ 新增：取得圖片 URL
     getImageUrl(gallery, fileName) {
-        const basePath = (gallery.folderPath || '').replace(/^\/+|\/+$/g, '');
-        return `https://f005.backblazeb2.com/file/laserpen-gallery-bucket/${basePath}/${fileName}`;
+        const base = (gallery.folderPath || '').replace(/^\/+|\/+$/g, '');
+        return `https://f005.backblazeb2.com/file/laserpen-gallery-bucket/${base}/${fileName}`;
     }
 
-    // ★ 新增：切換單張選取（不重新渲染，直接操作 DOM）
     toggleSelect(idx) {
-        if (this.selectedImages.has(idx)) {
-            this.selectedImages.delete(idx);
-        } else {
-            this.selectedImages.add(idx);
-        }
-        const item = document.querySelector(`.mgmt-batch-item[data-idx="${idx}"]`);
-        if (item) item.classList.toggle('selected', this.selectedImages.has(idx));
+        this.selectedImages.has(idx) ? this.selectedImages.delete(idx) : this.selectedImages.add(idx);
+        const el = document.querySelector(`.mgmt-batch-item[data-idx="${idx}"]`);
+        if (el) el.classList.toggle('selected', this.selectedImages.has(idx));
         this.updateBatchCount();
     }
-
-    // ★ 新增：全選
     selectAllImages() {
-        const gallery = this.galleries[this.editIdx];
-        if (!gallery) return;
-        for (let i = 0; i < gallery.imageFiles.length; i++) {
-            this.selectedImages.add(i);
-        }
+        const g = this.galleries[this.editIdx]; if (!g) return;
+        for (let i = 0; i < g.imageFiles.length; i++) this.selectedImages.add(i);
         document.querySelectorAll('.mgmt-batch-item').forEach(el => el.classList.add('selected'));
         this.updateBatchCount();
     }
-
-    // ★ 新增：取消全選
     deselectAllImages() {
         this.selectedImages.clear();
         document.querySelectorAll('.mgmt-batch-item').forEach(el => el.classList.remove('selected'));
         this.updateBatchCount();
     }
-
-    // ★ 新增：更新選取數量顯示
     updateBatchCount() {
-        const count = this.selectedImages.size;
-        const countEl = document.getElementById('mgmtBatchCount');
-        if (countEl) countEl.textContent = `已選擇 ${count} 張`;
-
-        const btn = document.getElementById('mgmtBatchDeleteBtn');
-        if (btn) btn.disabled = count === 0;
-
-        const text = document.getElementById('mgmtBatchDeleteText');
-        if (text) text.textContent = count > 0 ? `刪除選中 (${count})` : '刪除選中';
+        const n = this.selectedImages.size;
+        const c = document.getElementById('mgmtBatchCount'); if (c) c.textContent = '已選擇 ' + n + ' 張';
+        const b = document.getElementById('mgmtBatchDeleteBtn'); if (b) b.disabled = n === 0;
+        const t = document.getElementById('mgmtBatchDeleteText'); if (t) t.textContent = n > 0 ? '刪除選中 (' + n + ')' : '刪除選中';
     }
 
-    // ★ 新增：批次刪除確認
     confirmBatchDelete() {
-        const count = this.selectedImages.size;
-        if (count === 0) return;
-
-        const bg = document.createElement('div');
-        bg.className = 'mgmt-confirm-bg';
-        bg.innerHTML = `
-            <div class="mgmt-confirm-box">
-                <p>確定要刪除選中的<br><strong style="color:#f87171">${count} 張圖片</strong>？<br>
-                <span style="color:#94a3b8;font-size:13px">刪除後無法恢復</span></p>
-                <div class="mgmt-confirm-actions">
-                    <button class="mgmt-btn danger" id="mgmtBatchYes">確定刪除</button>
-                    <button class="mgmt-btn ghost" id="mgmtBatchNo">取消</button>
-                </div>
-            </div>`;
-        document.body.appendChild(bg);
-        document.getElementById('mgmtBatchYes').onclick = () => { bg.remove(); this.doBatchDelete(); };
-        document.getElementById('mgmtBatchNo').onclick = () => bg.remove();
-        bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
+        const n = this.selectedImages.size; if (!n) return;
+        this.confirm(`確定要刪除選中的 <strong style="color:#f87171">${n} 張圖片</strong>？`, () => this.doBatchDelete());
     }
-
-    // ★ 新增：執行批次刪除
     async doBatchDelete() {
-        if (this.selectedImages.size === 0) return;
-
-        const gallery = this.galleries[this.editIdx];
-        if (!gallery) return;
-
+        const g = this.galleries[this.editIdx]; if (!g) return;
         this.toast('正在刪除圖片...', 'info');
-
-        // 按降序排列索引（這樣 splice 不會影響前面的索引）
-        const indicesToDelete = Array.from(this.selectedImages).sort((a, b) => b - a);
-        const filesToDelete = indicesToDelete.map(idx => gallery.imageFiles[idx]);
-
-        let successCount = 0;
-        for (const file of filesToDelete) {
-            try {
-                await this.b2.deleteFile(gallery.folderPath + '/' + file);
-                successCount++;
-            } catch (e) {
-                console.warn('刪除文件失敗:', file, e);
-            }
-        }
-
-        // 從 imageFiles 移除（降序 splice）
-        for (const idx of indicesToDelete) {
-            gallery.imageFiles.splice(idx, 1);
-        }
-        gallery.fileCount = gallery.imageFiles.length;
-
-        try {
-            await this.b2.updateGalleries(this.galleries);
-            this.toast(`成功刪除 ${successCount} 張圖片`, 'success');
-        } catch (e) {
-            this.toast('更新數據失敗: ' + e.message, 'error');
-        }
-
-        this.selectedImages = new Set();
-        this.render();
+        const indices = Array.from(this.selectedImages).sort((a, b) => b - a);
+        const files = indices.map(i => g.imageFiles[i]);
+        let ok = 0;
+        for (const f of files) { try { await this.b2.deleteFile(g.folderPath + '/' + f); ok++; } catch (e) { console.warn(e); } }
+        for (const i of indices) g.imageFiles.splice(i, 1);
+        g.fileCount = g.imageFiles.length;
+        try { await this.b2.updateGalleries(this.galleries); this.toast('成功刪除 ' + ok + ' 張圖片', 'success'); } catch (e) { this.toast('更新失敗: ' + e.message, 'error'); }
+        this.selectedImages = new Set(); this.render();
     }
 
-    async saveForm(index) {
+    async saveGalleryForm(index) {
         const name = document.getElementById('mgmtName')?.value?.trim();
         if (!name) { this.toast('請輸入圖庫名稱', 'error'); return; }
-
-        const chars = this.splitInput('mgmtChars');
-        const tags = this.splitInput('mgmtTags');
-
+        const chars = this.splitInput('mgmtChars'), tags = this.splitInput('mgmtTags');
         try {
             if (index === -1) {
-                this.galleries.push({
-                    id: 'gallery-' + Date.now(),
-                    name: name,
-                    folderPath: 'galleries/' + name,
-                    character: chars,
-                    tags: tags,
-                    fileCount: 0,
-                    imageFiles: []
-                });
+                this.galleries.push({ id: 'gallery-' + Date.now(), name, folderPath: 'galleries/' + name, character: chars, tags, fileCount: 0, imageFiles: [] });
             } else {
-                const g = this.galleries[index];
-                g.name = name;
-                g.character = chars;
-                g.tags = tags;
+                const g = this.galleries[index]; g.name = name; g.character = chars; g.tags = tags;
             }
-
             await this.b2.updateGalleries(this.galleries);
-            this.creating = false;
-            this.editIdx = -1;
-            this.selectedImages = new Set(); // ★ 重置選取
-            this.toast(index === -1 ? '圖庫「' + name + '」已建立' : '更新成功', 'success');
+            this.creating = false; this.editIdx = -1; this.selectedImages = new Set();
+            this.toast(index === -1 ? '圖庫已建立' : '更新成功', 'success');
             this.render();
-        } catch (e) {
-            if (index === -1) this.galleries.pop();
-            this.toast('操作失敗: ' + e.message, 'error');
-        }
+        } catch (e) { if (index === -1) this.galleries.pop(); this.toast('操作失敗: ' + e.message, 'error'); }
     }
 
-    cancelForm() {
-        this.creating = false;
-        this.editIdx = -1;
-        this.selectedImages = new Set(); // ★ 重置選取
-        this.render();
-    }
+    cancelForm() { this.creating = false; this.editIdx = -1; this.selectedImages = new Set(); this.videoCreating = false; this.videoEditIdx = -1; this.render(); }
 
     confirmDel(index) {
         const g = this.galleries[index];
-        const bg = document.createElement('div');
-        bg.className = 'mgmt-confirm-bg';
-        bg.innerHTML = `
-            <div class="mgmt-confirm-box">
-                <p>確定要刪除圖庫<br><strong style="color:#f87171">「${this.esc(g.name)}」</strong>？<br>
-                <span style="color:#94a3b8;font-size:13px">包含 ${g.fileCount} 張圖片，刪除後無法恢復</span></p>
-                <div class="mgmt-confirm-actions">
-                    <button class="mgmt-btn danger" id="mgmtYes">確定刪除</button>
-                    <button class="mgmt-btn ghost" id="mgmtNo">取消</button>
-                </div>
-            </div>`;
-        document.body.appendChild(bg);
-        document.getElementById('mgmtYes').onclick = () => { bg.remove(); this.doDelete(index); };
-        document.getElementById('mgmtNo').onclick = () => bg.remove();
-        bg.onclick = (e) => { if (e.target === bg) bg.remove(); };
+        this.confirm(`確定要刪除圖庫 <strong style="color:#f87171">「${this.esc(g.name)}」</strong>？<br><span style="color:#94a3b8;font-size:13px">包含 ${g.fileCount} 張圖片</span>`, () => this.doDelete(index));
     }
-
     async doDelete(index) {
         const g = this.galleries[index];
         this.toast('正在刪除...', 'info');
         try {
-            for (const f of (g.imageFiles || [])) {
-                try { await this.b2.deleteFile(g.folderPath + '/' + f); }
-                catch (e) { console.warn('刪除文件失敗:', f, e); }
-            }
+            for (const f of (g.imageFiles || [])) { try { await this.b2.deleteFile(g.folderPath + '/' + f); } catch {} }
             this.galleries.splice(index, 1);
             await this.b2.updateGalleries(this.galleries);
-            this.toast('圖庫「' + g.name + '」已刪除', 'success');
-            this.render();
-        } catch (e) {
-            this.toast('刪除失敗: ' + e.message, 'error');
-        }
+            this.toast('圖庫已刪除', 'success'); this.render();
+        } catch (e) { this.toast('刪除失敗: ' + e.message, 'error'); }
     }
 
-    // ─── 上傳圖片 Tab ───
-
-    goUpload(galleryId) {
-        this.targetId = galleryId;
-        this.switchTab('upload');
-    }
+    // ═══ 上傳圖片 ═══
+    goUpload(id) { this.targetId = id; this.switchTab('upload'); }
 
     renderUpload() {
-        let html = `
-            <div class="mgmt-field">
-                <label>目標圖庫 *</label>
-                <select id="mgmtTarget" onchange="galleryManager.targetId=this.value">
-                    <option value="">── 請選擇圖庫 ──</option>
-                    ${this.galleries.map(g =>
-                        '<option value="' + g.id + '"' + (g.id === this.targetId ? ' selected' : '') + '>' +
-                        this.esc(g.name) + ' (' + (g.fileCount || 0) + ' 張)</option>'
-                    ).join('')}
-                </select>
-            </div>
-            <div class="mgmt-dropzone" id="mgmtDrop">
-                <div class="mgmt-dropzone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
-                <div class="mgmt-dropzone-text">拖放圖片到這裡，或點擊選擇</div>
-                <div class="mgmt-dropzone-hint">支援 JPG、PNG、GIF、WebP，可多選</div>
-                <input type="file" id="mgmtFileIn" multiple accept="image/*" style="display:none">
-            </div>`;
-
+        let html = `<div class="mgmt-field"><label>目標圖庫 *</label><select id="mgmtTarget" onchange="galleryManager.targetId=this.value">
+            <option value="">── 請選擇圖庫 ──</option>
+            ${this.galleries.map(g => '<option value="' + g.id + '"' + (g.id === this.targetId ? ' selected' : '') + '>' + this.esc(g.name) + ' (' + (g.fileCount || 0) + ' 張)</option>').join('')}
+        </select></div>
+        <div class="mgmt-dropzone" id="mgmtDrop"><div class="mgmt-dropzone-icon"><i class="fas fa-cloud-upload-alt"></i></div><div class="mgmt-dropzone-text">拖放圖片到這裡，或點擊選擇</div><div class="mgmt-dropzone-hint">支援 JPG、PNG、GIF、WebP，可多選</div><input type="file" id="mgmtFileIn" multiple accept="image/*" style="display:none"></div>`;
         if (this.files.length > 0) {
-            html += `
-                <div style="color:#94a3b8;font-size:13px;margin-bottom:6px">已選擇 ${this.files.length} 個文件</div>
-                <div class="mgmt-preview">
-                    ${this.files.map((f, i) =>
-                        '<div class="mgmt-preview-item">' +
-                        '<img src="' + URL.createObjectURL(f) + '" alt="">' +
-                        '<button class="mgmt-preview-remove" onclick="event.stopPropagation();galleryManager.removeFile(' + i + ')">✕</button>' +
-                        '</div>'
-                    ).join('')}
-                </div>
+            html += `<div style="color:#94a3b8;font-size:13px;margin-bottom:6px">已選擇 ${this.files.length} 個文件</div>
+                <div class="mgmt-preview">${this.files.map((f, i) => '<div class="mgmt-preview-item"><img src="' + URL.createObjectURL(f) + '"><button class="mgmt-preview-remove" onclick="event.stopPropagation();galleryManager.removeFile(' + i + ')">✕</button></div>').join('')}</div>
                 <div style="display:flex;gap:8px;margin-top:12px">
-                    <button class="mgmt-btn primary" style="flex:1"
-                            onclick="galleryManager.startUpload()" ${this.uploading ? 'disabled' : ''}>
-                        <i class="fas fa-upload"></i> ${this.uploading ? '上傳中...' : '開始上傳'}
-                    </button>
-                    <button class="mgmt-btn ghost" onclick="galleryManager.clearFiles()"
-                            ${this.uploading ? 'disabled' : ''}>清除</button>
+                    <button class="mgmt-btn primary" style="flex:1" onclick="galleryManager.startUpload()" ${this.uploading ? 'disabled' : ''}><i class="fas fa-upload"></i> ${this.uploading ? '上傳中...' : '開始上傳'}</button>
+                    <button class="mgmt-btn ghost" onclick="galleryManager.clearFiles()" ${this.uploading ? 'disabled' : ''}>清除</button>
                 </div>`;
         }
-
-        html += `
-            <div id="mgmtProg" style="display:none;margin-top:12px">
-                <div class="mgmt-progress-bar"><div class="mgmt-progress-fill" id="mgmtFill"></div></div>
-                <div class="mgmt-status" id="mgmtStatTxt"></div>
-            </div>`;
-
+        html += `<div id="mgmtProg" style="display:none;margin-top:12px"><div class="mgmt-progress-bar"><div class="mgmt-progress-fill" id="mgmtFill"></div></div><div class="mgmt-status" id="mgmtStatTxt"></div></div>`;
         return html;
     }
 
     bindDropzone() {
-        const drop = document.getElementById('mgmtDrop');
-        const input = document.getElementById('mgmtFileIn');
+        const drop = document.getElementById('mgmtDrop'), input = document.getElementById('mgmtFileIn');
         if (!drop || !input) return;
-
         drop.onclick = () => input.click();
-        drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('dragover'); };
+        drop.ondragover = e => { e.preventDefault(); drop.classList.add('dragover'); };
         drop.ondragleave = () => drop.classList.remove('dragover');
-        drop.ondrop = (e) => {
-            e.preventDefault(); drop.classList.remove('dragover');
-            this.addFiles(Array.from(e.dataTransfer.files));
-        };
-        input.onchange = (e) => { this.addFiles(Array.from(e.target.files)); e.target.value = ''; };
+        drop.ondrop = e => { e.preventDefault(); drop.classList.remove('dragover'); this.addFiles(Array.from(e.dataTransfer.files)); };
+        input.onchange = e => { this.addFiles(Array.from(e.target.files)); e.target.value = ''; };
     }
-
     addFiles(incoming) {
         const imgs = incoming.filter(f => f.type.startsWith('image/'));
-        if (imgs.length === 0) { this.toast('請選擇圖片文件', 'error'); return; }
-        this.files = [...this.files, ...imgs];
-        this.render();
+        if (!imgs.length) { this.toast('請選擇圖片文件', 'error'); return; }
+        this.files = [...this.files, ...imgs]; this.render();
     }
-
     removeFile(i) { this.files.splice(i, 1); this.render(); }
     clearFiles() { this.files = []; this.render(); }
 
     async startUpload() {
         const targetId = document.getElementById('mgmtTarget')?.value;
         if (!targetId) { this.toast('請選擇目標圖庫', 'error'); return; }
-        if (this.files.length === 0) { this.toast('請選擇圖片', 'error'); return; }
-
+        if (!this.files.length) { this.toast('請選擇圖片', 'error'); return; }
         const gallery = this.galleries.find(g => g.id === targetId);
         if (!gallery) { this.toast('找不到圖庫', 'error'); return; }
-
-        this.uploading = true;
-        this.render();
-
-        const progEl = document.getElementById('mgmtProg');
-        const fillEl = document.getElementById('mgmtFill');
-        const textEl = document.getElementById('mgmtStatTxt');
-        if (progEl) progEl.style.display = 'block';
-
-        let successCount = 0;
-        const newFileNames = [];
-
+        this.uploading = true; this.render();
+        const prog = document.getElementById('mgmtProg'), fill = document.getElementById('mgmtFill'), txt = document.getElementById('mgmtStatTxt');
+        if (prog) prog.style.display = 'block';
+        let ok = 0; const newNames = [];
         for (let i = 0; i < this.files.length; i++) {
-            const file = this.files[i];
-            const filePath = gallery.folderPath + '/' + file.name;
-            if (textEl) textEl.textContent = '上傳 (' + (i + 1) + '/' + this.files.length + '): ' + file.name;
-            if (fillEl) fillEl.style.width = ((i + 1) / this.files.length * 100) + '%';
-
+            const f = this.files[i];
+            if (txt) txt.textContent = '上傳 (' + (i + 1) + '/' + this.files.length + '): ' + f.name;
+            if (fill) fill.style.width = ((i + 1) / this.files.length * 100) + '%';
             try {
-                await this.b2.uploadFile(file, filePath);
-                if (!gallery.imageFiles.includes(file.name)) newFileNames.push(file.name);
-                successCount++;
-            } catch (e) {
-                console.error('上傳失敗 ' + file.name + ':', e);
-                this.toast('上傳失敗: ' + file.name, 'error');
-            }
+                await this.b2.uploadFile(f, gallery.folderPath + '/' + f.name);
+                if (!gallery.imageFiles.includes(f.name)) newNames.push(f.name);
+                ok++;
+            } catch (e) { this.toast('上傳失敗: ' + f.name, 'error'); }
         }
-
-        if (newFileNames.length > 0) {
-            gallery.imageFiles = [...gallery.imageFiles, ...newFileNames];
+        if (newNames.length) {
+            gallery.imageFiles = [...gallery.imageFiles, ...newNames];
             gallery.fileCount = gallery.imageFiles.length;
-            try {
-                if (textEl) textEl.textContent = '更新圖庫數據...';
-                await this.b2.updateGalleries(this.galleries);
-            } catch (e) {
-                this.toast('更新數據失敗: ' + e.message, 'error');
+            try { await this.b2.updateGalleries(this.galleries); } catch (e) { this.toast('更新數據失敗', 'error'); }
+        }
+        if (ok > 0) this.toast('成功上傳 ' + ok + ' 張圖片', 'success');
+        this.uploading = false; this.files = []; this.render();
+    }
+
+    // ═══ ★ 影片鏈接 Tab ═══
+    renderVideos() {
+        let html = '';
+        if (this.videoCreating) {
+            html += this.renderVideoForm();
+        } else {
+            html += `<button class="mgmt-btn primary" style="width:100%;padding:11px;margin-bottom:14px" onclick="galleryManager.videoCreating=true;galleryManager.render()"><i class="fas fa-plus"></i> 新增影片鏈接</button>`;
+        }
+        if (this.videos.length === 0 && !this.videoCreating) {
+            html += '<div class="mgmt-empty">還沒有任何影片鏈接</div>';
+        }
+        this.videos.forEach((v, i) => {
+            if (this.videoEditIdx === i) {
+                html += this.renderVideoForm(v, i);
+            } else {
+                const chars = (v.character || []).join(', ');
+                const tags = (v.tags || []).join(', ');
+                let domain = ''; try { domain = new URL(v.url).hostname; } catch { domain = v.url || ''; }
+                html += `<div class="mgmt-item"><div class="mgmt-item-info">
+                    <h4>${this.esc(v.name)}</h4>
+                    <div class="mgmt-item-meta"><i class="fas fa-link"></i> ${this.esc(domain)}${chars ? ' · ' + this.esc(chars) : ''}${tags ? ' · ' + this.esc(tags) : ''}</div>
+                </div><div class="mgmt-item-actions">
+                    <button class="mgmt-btn ghost sm" onclick="window.open('${this.esc(v.url)}','_blank')" title="開啟連結"><i class="fas fa-external-link-alt"></i></button>
+                    <button class="mgmt-btn ghost sm" onclick="galleryManager.videoEditIdx=${i};galleryManager.render()" title="編輯"><i class="fas fa-edit"></i></button>
+                    <button class="mgmt-btn danger sm" onclick="galleryManager.confirmVideoDelete(${i})" title="刪除"><i class="fas fa-trash"></i></button>
+                </div></div>`;
             }
-        }
+        });
+        return html;
+    }
 
-        if (successCount > 0) {
-            this.toast('成功上傳 ' + successCount + ' 張圖片到「' + gallery.name + '」', 'success');
-        }
+    renderVideoForm(video = null, index = -1) {
+        const isEdit = video !== null;
+        const name = isEdit ? video.name : '';
+        const url = isEdit ? video.url : '';
+        const cover = isEdit ? (video.cover || '') : '';
+        const chars = isEdit ? (video.character || []).join(', ') : '';
+        const tags = isEdit ? (video.tags || []).join(', ') : '';
 
-        this.uploading = false;
-        this.files = [];
+        return `<div class="mgmt-form"><h3>${isEdit ? '編輯影片鏈接' : '新增影片鏈接'}</h3>
+            <div class="mgmt-field"><label>影片名稱 *</label><input type="text" id="mgmtVideoName" value="${this.esc(name)}" placeholder="例如: 甘雨生日會動畫"></div>
+            <div class="mgmt-field"><label>影片網址 *</label><input type="text" id="mgmtVideoUrl" value="${this.esc(url)}" placeholder="https://..."></div>
+            <div class="mgmt-field"><label>封面圖片（選填）</label>
+                <div class="mgmt-cover-row">
+                    <input type="text" id="mgmtVideoCover" value="${this.esc(cover)}" placeholder="封面圖片 URL 或上傳">
+                    <button class="mgmt-btn ghost" onclick="galleryManager.pickVideoCover()" title="上傳封面"><i class="fas fa-upload"></i></button>
+                </div>
+                <input type="file" id="mgmtVideoCoverFile" accept="image/*" style="display:none">
+                <div class="mgmt-cover-preview" id="mgmtVideoCoverPreview">
+                    ${cover ? '<img src="' + this.esc(cover) + '">' : ''}
+                </div>
+            </div>
+            <div class="mgmt-field"><label>角色標籤（逗號分隔）</label><input type="text" id="mgmtVideoChars" value="${this.esc(chars)}" placeholder="例如: 甘雨, 刻晴"></div>
+            <div class="mgmt-field"><label>其他標籤（逗號分隔）</label><input type="text" id="mgmtVideoTags" value="${this.esc(tags)}" placeholder="例如: 動畫, 官方"></div>
+            <div class="mgmt-form-actions">
+                <button class="mgmt-btn primary" onclick="galleryManager.saveVideoForm(${index})">${isEdit ? '儲存變更' : '新增影片'}</button>
+                <button class="mgmt-btn ghost" onclick="galleryManager.cancelForm()">取消</button>
+            </div>
+        </div>`;
+    }
+
+    pickVideoCover() {
+        const input = document.getElementById('mgmtVideoCoverFile');
+        if (!input) return;
+        input.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            try {
+                this.toast('上傳封面中...', 'info');
+                const path = 'video-covers/' + Date.now() + '-' + file.name;
+                await this.b2.uploadFile(file, path);
+                const url = 'https://f005.backblazeb2.com/file/laserpen-gallery-bucket/' + path;
+                const urlInput = document.getElementById('mgmtVideoCover');
+                if (urlInput) urlInput.value = url;
+                const preview = document.getElementById('mgmtVideoCoverPreview');
+                if (preview) preview.innerHTML = '<img src="' + url + '">';
+                this.toast('封面上傳成功', 'success');
+            } catch (err) {
+                this.toast('封面上傳失敗: ' + err.message, 'error');
+            }
+            input.value = '';
+        };
+        input.click();
+    }
+
+    async saveVideoForm(index) {
+        const name = document.getElementById('mgmtVideoName')?.value?.trim();
+        const url = document.getElementById('mgmtVideoUrl')?.value?.trim();
+        if (!name) { this.toast('請輸入影片名稱', 'error'); return; }
+        if (!url) { this.toast('請輸入影片網址', 'error'); return; }
+
+        const cover = document.getElementById('mgmtVideoCover')?.value?.trim() || '';
+        const chars = this.splitInput('mgmtVideoChars');
+        const tags = this.splitInput('mgmtVideoTags');
+
+        try {
+            if (index === -1) {
+                this.videos.push({ id: 'video-' + Date.now(), name, url, cover, character: chars, tags, createdAt: Date.now() });
+            } else {
+                const v = this.videos[index];
+                v.name = name; v.url = url; v.cover = cover; v.character = chars; v.tags = tags;
+            }
+            await this.b2.updateVideos(this.videos);
+            this.videoCreating = false; this.videoEditIdx = -1;
+            this.toast(index === -1 ? '影片鏈接已新增' : '更新成功', 'success');
+            this.render();
+        } catch (e) {
+            if (index === -1) this.videos.pop();
+            this.toast('操作失敗: ' + e.message, 'error');
+        }
+    }
+
+    confirmVideoDelete(index) {
+        const v = this.videos[index];
+        this.confirm(`確定要刪除影片鏈接<br><strong style="color:#f87171">「${this.esc(v.name)}」</strong>？`, () => this.doVideoDelete(index));
+    }
+    async doVideoDelete(index) {
+        const v = this.videos[index];
+        // 如果封面是自己上傳的，嘗試刪除
+        if (v.cover && v.cover.includes('video-covers/')) {
+            try {
+                const path = v.cover.split('/file/laserpen-gallery-bucket/')[1];
+                if (path) await this.b2.deleteFile(path);
+            } catch {}
+        }
+        this.videos.splice(index, 1);
+        try {
+            await this.b2.updateVideos(this.videos);
+            this.toast('影片鏈接已刪除', 'success');
+        } catch (e) { this.toast('刪除失敗: ' + e.message, 'error'); }
         this.render();
     }
 
-    // ─── 工具方法 ───
-
+    // ═══ 工具 ═══
     splitInput(id) {
         const v = document.getElementById(id)?.value?.trim() || '';
-        return v ? v.split(',').map(s => s.trim()).filter(s => s) : [];
+        return v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
     }
-
-    esc(str) {
-        if (!str) return '';
-        const d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
-    }
-
+    esc(str) { if (!str) return ''; const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
     toast(msg, type = 'info') {
         document.querySelectorAll('.mgmt-toast').forEach(el => el.remove());
-        const el = document.createElement('div');
-        el.className = 'mgmt-toast ' + type;
-        el.textContent = msg;
-        document.body.appendChild(el);
-        setTimeout(() => el.remove(), 3000);
+        const el = document.createElement('div'); el.className = 'mgmt-toast ' + type; el.textContent = msg;
+        document.body.appendChild(el); setTimeout(() => el.remove(), 3000);
+    }
+    confirm(html, onYes) {
+        const bg = document.createElement('div'); bg.className = 'mgmt-confirm-bg';
+        bg.innerHTML = `<div class="mgmt-confirm-box"><p>${html}</p><div class="mgmt-confirm-actions"><button class="mgmt-btn danger" id="mgmtYes">確定</button><button class="mgmt-btn ghost" id="mgmtNo">取消</button></div></div>`;
+        document.body.appendChild(bg);
+        document.getElementById('mgmtYes').onclick = () => { bg.remove(); onYes(); };
+        document.getElementById('mgmtNo').onclick = () => bg.remove();
+        bg.onclick = e => { if (e.target === bg) bg.remove(); };
     }
 }
-
-// ─── 全局實例與函數 ───
 
 const galleryManager = new GalleryManager();
 
@@ -635,15 +505,11 @@ function openManagementPage() {
 
 function closeManagementPanel() {
     document.getElementById('managementPanel').style.display = 'none';
-
-    if (typeof loadGalleryData === 'function') {
-        loadGalleryData().then(() => {
-            if (typeof processGalleryCovers === 'function') processGalleryCovers();
-            if (typeof updateStats === 'function') updateStats();
-            if (typeof updateTagFilters === 'function') updateTagFilters();
-            if (typeof renderGalleryList === 'function' && typeof galleryDatabase !== 'undefined') {
-                renderGalleryList(galleryDatabase);
-            }
-        }).catch(e => console.error('刷新圖庫失敗:', e));
-    }
+    Promise.all([loadGalleryData(), loadVideoData()]).then(() => {
+        processGalleryCovers();
+        updateStats();
+        updateTagFilters();
+        if (currentTab === 'gallery') renderGalleryList(galleryDatabase);
+        else renderVideoList(videoDatabase);
+    }).catch(e => console.error('刷新失敗:', e));
 }
