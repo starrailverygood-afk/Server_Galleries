@@ -24,6 +24,63 @@ function buildB2Url(...segs) {
 function escHtml(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 function escAttr(str) { return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
+// ========== 主頁籤切換 ==========
+function switchMainTab(tab) {
+    // 切換按鈕樣式
+    document.querySelectorAll('.main-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+
+    // 切換區塊顯示
+    document.getElementById('gallerySection').style.display = tab === 'gallery' ? '' : 'none';
+    document.getElementById('videoSection').style.display = tab === 'video' ? '' : 'none';
+
+    // 切換側邊欄（影片頁不需要篩選）
+    document.querySelector('.sidebar').style.display = tab === 'gallery' ? '' : 'none';
+
+    // 切到影片時載入影片列表
+    if (tab === 'video') {
+        loadVideos();
+    }
+}
+
+// ========== 影片功能 ==========
+async function loadVideos() {
+    const container = document.getElementById('videoView');
+    container.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> 載入中...</div>';
+
+    try {
+        const resp = await fetch(B2_CONFIG.workerUrl + '/api/videos');
+        const videos = await resp.json();
+
+        if (!Array.isArray(videos) || videos.length === 0) {
+            container.innerHTML = '<div style="text-align:center;padding:60px;color:#999;"><i class="fas fa-film" style="font-size:48px;margin-bottom:15px;display:block;"></i>尚無影片鏈接</div>';
+            return;
+        }
+
+        container.innerHTML = videos.map(v => `
+            <div class="gallery-card" style="cursor:pointer;" onclick="window.open('${v.url}','_blank')">
+                <div class="gallery-cover" style="position:relative;">
+                    ${v.thumbnail
+                        ? `<img src="${v.thumbnail}" alt="${v.title}" style="width:100%;height:100%;object-fit:cover;">`
+                        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1a2e;"><i class="fas fa-play-circle" style="font-size:48px;color:#e94560;"></i></div>`
+                    }
+                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:40px;color:rgba(255,255,255,0.8);text-shadow:0 0 20px rgba(0,0,0,0.8);">
+                        <i class="fas fa-play-circle"></i>
+                    </div>
+                </div>
+                <div class="gallery-info">
+                    <h3>${v.title || '未命名影片'}</h3>
+                    ${v.tags ? `<div class="gallery-tags">${v.tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
+                </div>
+            </div>
+        `).join('');
+
+    } catch (e) {
+        container.innerHTML = `<div style="text-align:center;padding:60px;color:#e94560;"><i class="fas fa-exclamation-triangle"></i> 載入失敗：${e.message}</div>`;
+    }
+}
+
 // ═══ 初始化 ═══
 document.addEventListener('DOMContentLoaded', async function () {
     const loading = document.getElementById('loading');
