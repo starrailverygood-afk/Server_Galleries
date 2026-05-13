@@ -11,56 +11,6 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🖼️</text></svg>">
 </head>
 <body>
-        <!-- 密碼遮罩 -->
-    <div id="password-gate" style="
-      position: fixed; inset: 0; z-index: 99999;
-      background: #0a0a0a;
-      display: flex; align-items: center; justify-content: center;
-      flex-direction: column; gap: 16px;
-    ">
-      <p style="color: #aaa; font-size: 14px;">請輸入密碼以繼續</p>
-      <input id="pw-input" type="password" placeholder="密碼" autofocus style="
-        padding: 10px 16px; font-size: 18px; border-radius: 8px;
-        border: 1px solid #333; background: #1a1a1a; color: #fff;
-        text-align: center; width: 200px; outline: none;
-      " />
-      <button id="pw-btn" style="
-        padding: 8px 24px; font-size: 14px; border-radius: 8px;
-        border: none; background: #3b82f6; color: #fff; cursor: pointer;
-      ">進入</button>
-      <p id="pw-error" style="color: #ef4444; font-size: 13px; display: none;">密碼錯誤</p>
-    </div>
-    
-    <script>
-    (function() {
-      const CORRECT_PW = '0425';
-      const STORAGE_KEY = 'gallery_authenticated';
-      const gate = document.getElementById('password-gate');
-    
-      // 已驗證過 → 直接移除遮罩
-      if (localStorage.getItem(STORAGE_KEY) === 'true') {
-        gate.remove();
-        return;
-      }
-    
-      function tryLogin() {
-        const input = document.getElementById('pw-input');
-        if (input.value === CORRECT_PW) {
-          localStorage.setItem(STORAGE_KEY, 'true');
-          gate.remove();
-        } else {
-          document.getElementById('pw-error').style.display = 'block';
-          input.value = '';
-          input.focus();
-        }
-      }
-    
-      document.getElementById('pw-btn').addEventListener('click', tryLogin);
-      document.getElementById('pw-input').addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') tryLogin();
-      });
-    })();
-    </script>
     <!-- 側邊欄 - 標籤篩選 -->
     <aside class="sidebar">
         <div class="sidebar-header">
