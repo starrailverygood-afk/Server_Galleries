@@ -59,7 +59,8 @@ async function loadVideos() {
         }
 
         container.innerHTML = videos.map(v => `
-            <div class="gallery-card" style="cursor:pointer;" onclick="window.open('${v.url}','_blank')">
+            <a href="${v.url}" target="_blank" rel="noopener noreferrer" 
+               class="gallery-card" style="text-decoration:none;color:inherit;display:block;">
                 <div class="gallery-cover" style="position:relative;">
                     ${v.thumbnail
                         ? `<img src="${v.thumbnail}" alt="${v.title}" style="width:100%;height:100%;object-fit:cover;">`
@@ -73,7 +74,7 @@ async function loadVideos() {
                     <h3>${v.title || '未命名影片'}</h3>
                     ${v.tags ? `<div class="gallery-tags">${v.tags.map(t => `<span class="tag">${t}</span>`).join('')}</div>` : ''}
                 </div>
-            </div>
+            </a>
         `).join('');
 
     } catch (e) {
