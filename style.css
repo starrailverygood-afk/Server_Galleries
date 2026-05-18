@@ -686,7 +686,6 @@ body {
     position: relative;
     z-index: 1;
     pointer-events: none;
-    will-change: contents;
 }
 
 /* 進度條容器 */
