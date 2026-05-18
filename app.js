@@ -277,7 +277,6 @@ function processGalleryCovers() {
             const base = g.folderPath.replace(/^\/+|\/+$/g, '');
             g.fullImagePaths = g.imageFiles.map(f => buildB2Url(base, f));
 
-            // ★ 優先用縮圖（coverThumb），沒有才用原圖
             if (g.coverThumb) {
                 g.coverImage = g.coverThumb.startsWith('http') ? g.coverThumb : buildB2Url(g.coverThumb);
             } else {
@@ -593,7 +592,6 @@ async function loadGalleryImages(gallery) {
         d.onclick = function () { openImageFullscreen(gallery.id, idx); };
 
         if (isVideoFile(path)) {
-            // ★ 影片項目：顯示播放圖示佔位符
             d.classList.add('grid-video-item');
             d.innerHTML = `
                 <div class="grid-video-placeholder">
@@ -601,7 +599,6 @@ async function loadGalleryImages(gallery) {
                     <span class="grid-video-label">MP4</span>
                 </div>`;
         } else {
-            // 圖片項目：canvas 離屏載入
             d.innerHTML = `<canvas data-src="${path}" data-gid="${gallery.id}" data-idx="${idx}"
                 class="grid-canvas" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;"></canvas>`;
         }
@@ -621,31 +618,102 @@ window.handleGridImageError = function (el, gid, idx) {
     }
 };
 
-// ═══ ★ 全屏瀏覽器 — 圖片 + 影片 ═══
+// ═══════════════════════════════════════════════════════
+//  ★ 全屏瀏覽器 — 影片預載入池（無縫切換）
+// ═══════════════════════════════════════════════════════
+
+// 圖片快取（保持原有）
 let _fsCache = {};
 
+// ★ 新增：影片元素池  index → { video: HTMLVideoElement, ready: bool }
+let _fsVideoPool = {};
+
 function _fsClearCache() {
+    // 清圖片快取
     Object.values(_fsCache).forEach(img => { if (img && img.src) img.src = ''; });
     _fsCache = {};
+    // 清影片池
+    _fsClearVideoPool();
 }
 
+function _fsClearVideoPool() {
+    Object.values(_fsVideoPool).forEach(entry => {
+        entry.video.pause();
+        entry.video.removeAttribute('src');
+        entry.video.load();
+        if (entry.video.parentNode) entry.video.parentNode.removeChild(entry.video);
+    });
+    _fsVideoPool = {};
+}
+
+// ★ 為指定 index 準備一個 <video> 元素（如已存在則復用）
+function _fsPrepareVideo(index) {
+    if (!window.fullscreenImages) return null;
+    const src = window.fullscreenImages[index];
+    if (!src || !isVideoFile(src)) return null;
+    if (_fsVideoPool[index]) return _fsVideoPool[index];
+
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.style.display = 'none';
+    video.src = src;
+
+    const entry = { video, ready: false };
+    video.addEventListener('canplaythrough', () => { entry.ready = true; }, { once: true });
+    video.load(); // 開始緩衝
+
+    // 掛進 DOM（某些手機瀏覽器需要在 DOM 內才會緩衝）
+    const container = document.getElementById('fsContainer');
+    if (container) container.appendChild(video);
+
+    _fsVideoPool[index] = entry;
+    return entry;
+}
+
+// ★ 統一預載入：圖片 + 影片，保留 [-1, 0, +1, +2] 共 4 個
 function _fsPreload(index) {
     if (!window.fullscreenImages) return;
     const len = window.fullscreenImages.length;
     const keep = new Set();
-    for (let d = -1; d <= 1; d++) keep.add((index + d + len) % len);
+    for (let d = -1; d <= 2; d++) keep.add((index + d + len) % len);
+
+    // — 清理圖片快取 —
     Object.keys(_fsCache).forEach(k => {
         if (!keep.has(parseInt(k))) {
             if (_fsCache[k]) _fsCache[k].src = '';
             delete _fsCache[k];
         }
     });
+    // 預載入圖片
     keep.forEach(i => {
-        // ★ 只預載入圖片，不預載入影片
-        if (!_fsCache[i] && window.fullscreenImages[i] && !isVideoFile(window.fullscreenImages[i])) {
+        const s = window.fullscreenImages[i];
+        if (s && !isVideoFile(s) && !_fsCache[i]) {
             const img = new Image();
-            img.src = window.fullscreenImages[i];
+            img.src = s;
             _fsCache[i] = img;
+        }
+    });
+
+    // — 清理影片池 —
+    Object.keys(_fsVideoPool).forEach(k => {
+        const ki = parseInt(k);
+        if (!keep.has(ki)) {
+            const entry = _fsVideoPool[ki];
+            entry.video.pause();
+            entry.video.removeAttribute('src');
+            entry.video.load();
+            if (entry.video.parentNode) entry.video.parentNode.removeChild(entry.video);
+            delete _fsVideoPool[ki];
+        }
+    });
+    // 預載入影片
+    keep.forEach(i => {
+        const s = window.fullscreenImages[i];
+        if (s && isVideoFile(s) && !_fsVideoPool[i]) {
+            _fsPrepareVideo(i);
         }
     });
 }
@@ -653,6 +721,7 @@ function _fsPreload(index) {
 window.fsLeftClick = function () { reverseMode ? fsNextImage() : fsPrevImage(); };
 window.fsRightClick = function () { reverseMode ? fsPrevImage() : fsNextImage(); };
 
+// ★ openImageFullscreen — 移除靜態 <video>，改用池
 window.openImageFullscreen = function (galleryId, imageIndex) {
     const gallery = galleryDatabase.find(g => g.id === galleryId);
     if (!gallery) return;
@@ -672,9 +741,8 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
             </div>
         </div>
         <button class="fs-close-btn" onclick="closeFullscreen()"><i class="fas fa-times"></i></button>
-        <div class="fs-image-container">
+        <div class="fs-image-container" id="fsContainer">
             <img id="fsImage" src="" alt="" decoding="async">
-            <video id="fsVideo" playsinline muted loop style="display:none;"></video>
             <div class="fs-click-zone fs-click-left" onclick="fsLeftClick()"></div>
             <div class="fs-click-zone fs-click-right" onclick="fsRightClick()"></div>
             <div class="fs-auto-controls">
@@ -691,44 +759,51 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
     updateFullscreenImage();
 };
 
-// ═══ ★ updateFullscreenImage — 圖片/影片切換 ═══
+// ═══ ★ updateFullscreenImage — 無縫影片切換 ═══
 function updateFullscreenImage() {
     if (!window.fullscreenImages) return;
-    const src = window.fullscreenImages[window.currentFsIndex];
+    const idx = window.currentFsIndex;
+    const src = window.fullscreenImages[idx];
     const img = document.getElementById('fsImage');
-    const video = document.getElementById('fsVideo');
     const info = document.getElementById('fsImageIndex');
 
     if (!src) return;
 
+    // ★ 先隱藏 + 暫停所有池中影片
+    Object.values(_fsVideoPool).forEach(entry => {
+        entry.video.pause();
+        entry.video.style.display = 'none';
+    });
+
     if (isVideoFile(src)) {
-        // ★ 影片模式
+        // ── 影片模式 ──
         if (img) { img.style.display = 'none'; img.removeAttribute('src'); }
-        if (video) {
-            video.style.display = 'block';
-            video.src = src;
-            video.play().catch(() => {});
+
+        // 從池中取出（或即時建立）
+        let entry = _fsVideoPool[idx];
+        if (!entry) entry = _fsPrepareVideo(idx);
+
+        if (entry) {
+            entry.video.style.display = 'block';
+            entry.video.currentTime = 0;
+            entry.video.play().catch(() => {});
         }
     } else {
-        // ★ 圖片模式
-        if (video) {
-            video.pause();
-            video.removeAttribute('src');
-            video.load();
-            video.style.display = 'none';
-        }
+        // ── 圖片模式 ──
         if (img) {
             img.style.display = 'block';
             img.src = src;
             const g = galleryDatabase.find(g => g.id === window.currentGalleryId);
-            img.onerror = function () { this.src = createPlaceholderSVG(g || {}, window.currentFsIndex + 1); this.onerror = null; };
+            img.onerror = function () { this.src = createPlaceholderSVG(g || {}, idx + 1); this.onerror = null; };
         }
     }
 
-    if (info) info.textContent = (window.currentFsIndex + 1) + ' / ' + window.fullscreenImages.length;
+    if (info) info.textContent = (idx + 1) + ' / ' + window.fullscreenImages.length;
     updateFsSpeedDisplay();
-    _fsPreload(window.currentFsIndex);
     updateProgressBar();
+
+    // ★ 預載入前後的圖片 & 影片
+    _fsPreload(idx);
 }
 
 function updateProgressBar() {
@@ -752,18 +827,12 @@ window.fsNextImage = function () {
     if (isFsAutoPlaying) startFsAutoPlay();
 };
 
-// ═══ ★ closeFullscreen — 清理影片 ═══
+// ═══ ★ closeFullscreen — 清理影片池 ═══
 window.closeFullscreen = function () {
     const fs = document.getElementById('fullscreenViewer');
     if (fs) {
         const img = document.getElementById('fsImage');
         if (img) img.src = '';
-        const video = document.getElementById('fsVideo');
-        if (video) {
-            video.pause();
-            video.removeAttribute('src');
-            video.load();
-        }
         fs.style.display = 'none';
     }
     _fsClearCache();
