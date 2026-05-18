@@ -49,23 +49,33 @@
     --scrollbar-hover: #544b6e;
 }
 
-/* ═══ Theme: 翡翠 ═══ */
+/* ═══ Theme: 翡翠(純白) ═══ */
 .theme-green {
-    --bg-base: #0a1610;
-    --bg-card: #132820;
-    --bg-deep: rgba(10, 22, 16, 0.5);
-    --bg-header: #102219;
-    --border: #1e3a2f;
-    --border-light: rgba(30, 58, 47, 0.3);
-    --border-hover: #2d5443;
-    --accent: #10b981;
-    --accent-hover: #059669;
-    --accent-glow: #34d399;
-    --accent-bg: rgba(16, 185, 129, 0.1);
-    --tag-bg: #1e3a2f;
-    --tag-bg-subtle: rgba(30, 58, 47, 0.5);
-    --scrollbar-thumb: #2d5443;
-    --scrollbar-hover: #3d6b56;
+    --bg-base: #ffffff;
+    --bg-card: #f8f9fa;
+    --bg-deep: rgba(241, 243, 245, 0.5);
+    --bg-header: #f1f3f5;
+    --border: #dee2e6;
+    --border-light: rgba(206, 212, 218, 0.3);
+    --border-hover: #ced4da;
+    --text-head: #212529;
+    --text-1: #212529;
+    --text-body: #343a40;
+    --text-2: #495057;
+    --text-3: #868e96;
+    --text-4: #adb5bd;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-glow: #60a5fa;
+    --accent-bg: rgba(59, 130, 246, 0.08);
+    --tag-bg: #e9ecef;
+    --tag-bg-subtle: rgba(233, 236, 239, 0.5);
+    --tag-char-bg: rgba(139, 92, 246, 0.1);
+    --tag-char-color: #7c3aed;
+    --tag-char-border: rgba(139, 92, 246, 0.2);
+    --scrollbar-track: rgba(233, 236, 239, 0.5);
+    --scrollbar-thumb: #ced4da;
+    --scrollbar-hover: #adb5bd;
 }
 
 /* ═══ Theme: 玫瑰 ═══ */
