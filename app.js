@@ -14,12 +14,17 @@ let fsAutoPlayInterval = null;
 let autoPlaySpeed = 10000;
 let isFsAutoPlaying = false;
 
+// ═══ ★ 檔案類型判斷 ═══
+function isVideoFile(path) {
+    if (!path) return false;
+    const ext = path.split('.').pop().split('?')[0].toLowerCase();
+    return ['mp4', 'webm', 'mov'].includes(ext);
+}
+
 // ═══════════════════════════════════════════════════════
-//  離屏圖片載入佇列（核心優化）
-//  圖片永遠不以 <img> 插入 DOM，避免動態 WebP 動畫合成
-//  用離屏 Image() 載入 → drawImage 到 <canvas> → 銷毀 Image
+//  離屏圖片載入佇列
 // ═══════════════════════════════════════════════════════
-const _MAX_LOAD = 2;       // iPad 同時最多 2 張
+const _MAX_LOAD = 2;
 let _loadN = 0;
 const _loadQ = [];
 
@@ -32,8 +37,7 @@ function queueCanvasLoad(canvas, url, maxDim, onErr) {
 function _execLoad(task) {
     const { canvas, url, maxDim, onErr } = task;
     if (!canvas.isConnected) { _loadN--; _drainQueue(); return; }
-
-    const offscreen = new Image();          // ← 離屏，不插入 DOM
+    const offscreen = new Image();
     offscreen.onload = function () {
         if (!canvas.isConnected) { _killImg(offscreen); return; }
         let w = this.naturalWidth, h = this.naturalHeight;
@@ -45,7 +49,6 @@ function _execLoad(task) {
         canvas.height = h;
         try { canvas.getContext('2d').drawImage(this, 0, 0, w, h); } catch (_) {}
         canvas.style.opacity = '1';
-        // 隱藏同層佔位符
         const ph = canvas.parentElement && canvas.parentElement.querySelector('.placeholder-cover');
         if (ph) ph.style.display = 'none';
         _killImg(offscreen);
@@ -54,12 +57,12 @@ function _execLoad(task) {
         if (onErr) onErr(canvas);
         _killImg(offscreen);
     };
-    offscreen.src = url;                    // 開始載入（離屏）
+    offscreen.src = url;
 }
 
 function _killImg(img) {
     img.onload = img.onerror = null;
-    img.src = '';                           // 釋放記憶體
+    img.src = '';
     _loadN--;
     _drainQueue();
 }
@@ -102,6 +105,10 @@ function setupGridObserver() {
         entries.forEach(entry => {
             if (!entry.isIntersecting) return;
             const item = entry.target;
+            if (item.classList.contains('grid-video-item')) {
+                gridObserver.unobserve(item);
+                return;
+            }
             const c = item.querySelector('canvas[data-src]');
             if (!c) return;
             const src = c.dataset.src;
@@ -261,15 +268,17 @@ async function loadVideoData() {
     } catch (e) { console.warn('載入影片數據失敗:', e); videoDatabase = []; }
 }
 
-// ═══ 圖庫封面處理 ═══
+// ═══ ★ 圖庫封面處理（影片感知）═══
 function processGalleryCovers() {
     for (const g of galleryDatabase) {
         g.color = PLACEHOLDER_COLORS[(parseInt(g.id.replace('gallery-', '')) || 0) % PLACEHOLDER_COLORS.length];
         g.initials = getGalleryInitials(g.name);
         if (g.imageFiles && g.imageFiles.length > 0 && g.folderPath) {
             const base = g.folderPath.replace(/^\/+|\/+$/g, '');
-            g.coverImage = buildB2Url(base, g.imageFiles[0]);
             g.fullImagePaths = g.imageFiles.map(f => buildB2Url(base, f));
+            // ★ 封面優先選圖片檔，跳過影片檔
+            const coverFile = g.imageFiles.find(f => !isVideoFile(f)) || g.imageFiles[0];
+            g.coverImage = isVideoFile(coverFile) ? '' : buildB2Url(base, coverFile);
         }
     }
 }
@@ -376,7 +385,7 @@ window.clearAllFilters = function () {
     else renderVideoList(videoDatabase);
 };
 
-// ═══ 圖庫渲染（Canvas 離屏載入）═══
+// ═══ 圖庫渲染 ═══
 function renderGalleryList(galleries) {
     const container = document.getElementById('galleryView');
     if (!container) return;
@@ -392,8 +401,8 @@ function renderGalleryList(galleries) {
     container.innerHTML = galleries.map(g => `
         <div class="gallery-card" onclick="openGalleryViewer('${g.id}')">
             <div class="gallery-cover-container">
-                <canvas data-src="${g.coverImage || ''}" class="gallery-cover lazy-cover" style="opacity:0;"></canvas>
-                <div class="placeholder-cover" style="background-color:${g.color};display:none;">
+                ${g.coverImage ? `<canvas data-src="${g.coverImage}" class="gallery-cover lazy-cover" style="opacity:0;"></canvas>` : ''}
+                <div class="placeholder-cover" style="background-color:${g.color};display:${g.coverImage ? 'none' : 'flex'};">
                     <div class="placeholder-text">${g.initials}</div>
                 </div>
             </div>
@@ -410,7 +419,6 @@ function renderGalleryList(galleries) {
     container.querySelectorAll('canvas.lazy-cover').forEach(c => coverObserver.observe(c));
 }
 
-// 向後相容（其他檔案可能呼叫）
 window.handleCoverImageError = function (el, id) {
     el.style.display = 'none';
     const p = el.nextElementSibling;
@@ -549,6 +557,7 @@ window.openGalleryViewer = function (galleryId) {
     window.galleryImages = gallery.fullImagePaths || [];
 };
 
+// ═══ ★ loadGalleryImages — 影片感知 ═══
 async function loadGalleryImages(gallery) {
     const grid = document.getElementById('imageGrid-' + gallery.id);
     if (!grid) return;
@@ -575,9 +584,20 @@ async function loadGalleryImages(gallery) {
         d.style.cursor = 'pointer';
         d.style.backgroundColor = gallery.color;
         d.onclick = function () { openImageFullscreen(gallery.id, idx); };
-        // Canvas 取代 <img>，避免動態圖在 DOM 中播放
-        d.innerHTML = `<canvas data-src="${path}" data-gid="${gallery.id}" data-idx="${idx}"
-            class="grid-canvas" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;"></canvas>`;
+
+        if (isVideoFile(path)) {
+            // ★ 影片項目：顯示播放圖示佔位符
+            d.classList.add('grid-video-item');
+            d.innerHTML = `
+                <div class="grid-video-placeholder">
+                    <i class="fas fa-play-circle"></i>
+                    <span class="grid-video-label">MP4</span>
+                </div>`;
+        } else {
+            // 圖片項目：canvas 離屏載入
+            d.innerHTML = `<canvas data-src="${path}" data-gid="${gallery.id}" data-idx="${idx}"
+                class="grid-canvas" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;"></canvas>`;
+        }
         grid.appendChild(d);
     });
 
@@ -586,7 +606,6 @@ async function loadGalleryImages(gallery) {
     });
 }
 
-// 向後相容
 window.handleGridImageError = function (el, gid, idx) {
     const g = galleryDatabase.find(x => x.id === gid);
     if (g && el.tagName === 'IMG') {
@@ -595,7 +614,7 @@ window.handleGridImageError = function (el, gid, idx) {
     }
 };
 
-// ═══ 全屏瀏覽器（只載入當前 ±1 張）═══
+// ═══ ★ 全屏瀏覽器 — 圖片 + 影片 ═══
 let _fsCache = {};
 
 function _fsClearCache() {
@@ -608,16 +627,15 @@ function _fsPreload(index) {
     const len = window.fullscreenImages.length;
     const keep = new Set();
     for (let d = -1; d <= 1; d++) keep.add((index + d + len) % len);
-    // 清掉不需要的
     Object.keys(_fsCache).forEach(k => {
         if (!keep.has(parseInt(k))) {
             if (_fsCache[k]) _fsCache[k].src = '';
             delete _fsCache[k];
         }
     });
-    // 預載入需要的
     keep.forEach(i => {
-        if (!_fsCache[i] && window.fullscreenImages[i]) {
+        // ★ 只預載入圖片，不預載入影片
+        if (!_fsCache[i] && window.fullscreenImages[i] && !isVideoFile(window.fullscreenImages[i])) {
             const img = new Image();
             img.src = window.fullscreenImages[i];
             _fsCache[i] = img;
@@ -649,6 +667,7 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
         <button class="fs-close-btn" onclick="closeFullscreen()"><i class="fas fa-times"></i></button>
         <div class="fs-image-container">
             <img id="fsImage" src="" alt="" decoding="async">
+            <video id="fsVideo" playsinline muted loop style="display:none;"></video>
             <div class="fs-click-zone fs-click-left" onclick="fsLeftClick()"></div>
             <div class="fs-click-zone fs-click-right" onclick="fsRightClick()"></div>
             <div class="fs-auto-controls">
@@ -665,19 +684,44 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
     updateFullscreenImage();
 };
 
+// ═══ ★ updateFullscreenImage — 圖片/影片切換 ═══
 function updateFullscreenImage() {
     if (!window.fullscreenImages) return;
+    const src = window.fullscreenImages[window.currentFsIndex];
     const img = document.getElementById('fsImage');
+    const video = document.getElementById('fsVideo');
     const info = document.getElementById('fsImageIndex');
-    if (img && window.fullscreenImages[window.currentFsIndex]) {
-        img.src = window.fullscreenImages[window.currentFsIndex];
-        if (info) info.textContent = (window.currentFsIndex + 1) + ' / ' + window.fullscreenImages.length;
-        updateFsSpeedDisplay();
-        const g = galleryDatabase.find(g => g.id === window.currentGalleryId);
-        img.onerror = function () { this.src = createPlaceholderSVG(g || {}, window.currentFsIndex + 1); this.onerror = null; };
-        _fsPreload(window.currentFsIndex);
-        updateProgressBar();
+
+    if (!src) return;
+
+    if (isVideoFile(src)) {
+        // ★ 影片模式
+        if (img) { img.style.display = 'none'; img.removeAttribute('src'); }
+        if (video) {
+            video.style.display = 'block';
+            video.src = src;
+            video.play().catch(() => {});
+        }
+    } else {
+        // ★ 圖片模式
+        if (video) {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            video.style.display = 'none';
+        }
+        if (img) {
+            img.style.display = 'block';
+            img.src = src;
+            const g = galleryDatabase.find(g => g.id === window.currentGalleryId);
+            img.onerror = function () { this.src = createPlaceholderSVG(g || {}, window.currentFsIndex + 1); this.onerror = null; };
+        }
     }
+
+    if (info) info.textContent = (window.currentFsIndex + 1) + ' / ' + window.fullscreenImages.length;
+    updateFsSpeedDisplay();
+    _fsPreload(window.currentFsIndex);
+    updateProgressBar();
 }
 
 function updateProgressBar() {
@@ -700,17 +744,26 @@ window.fsNextImage = function () {
     updateFullscreenImage();
     if (isFsAutoPlaying) startFsAutoPlay();
 };
+
+// ═══ ★ closeFullscreen — 清理影片 ═══
 window.closeFullscreen = function () {
     const fs = document.getElementById('fullscreenViewer');
     if (fs) {
         const img = document.getElementById('fsImage');
         if (img) img.src = '';
+        const video = document.getElementById('fsVideo');
+        if (video) {
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+        }
         fs.style.display = 'none';
     }
     _fsClearCache();
     stopFsAutoPlay();
     isFsAutoPlaying = false;
 };
+
 window.closeGalleryViewer = function () {
     flushLoadQueue();
     if (gridObserver) gridObserver.disconnect();
@@ -733,7 +786,7 @@ window.nextImage = function () {
     }
 };
 
-// ═══ 自動播放（無 requestAnimationFrame 迴圈，省 CPU）═══
+// ═══ 自動播放 ═══
 window.fsToggleAutoPlay = function () { isFsAutoPlaying ? stopFsAutoPlay() : startFsAutoPlay(); };
 
 function startFsAutoPlay() {
