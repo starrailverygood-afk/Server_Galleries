@@ -283,7 +283,7 @@ class GalleryManager {
             <option value="">── 請選擇圖庫 ──</option>
             ${this.galleries.map(g => '<option value="' + g.id + '"' + (g.id === this.targetId ? ' selected' : '') + '>' + this.esc(g.name) + ' (' + (g.fileCount || 0) + ' 張)</option>').join('')}
         </select></div>
-        <div class="mgmt-dropzone" id="mgmtDrop"><div class="mgmt-dropzone-icon"><i class="fas fa-cloud-upload-alt"></i></div><div class="mgmt-dropzone-text">拖放圖片到這裡，或點擊選擇</div><div class="mgmt-dropzone-hint">支援 JPG、PNG、GIF、WebP，可多選</div><input type="file" id="mgmtFileIn" multiple accept="image/*" style="display:none"></div>`;
+        <div class="mgmt-dropzone" id="mgmtDrop"><div class="mgmt-dropzone-icon"><i class="fas fa-cloud-upload-alt"></i></div><div class="mgmt-dropzone-text">拖放圖片到這裡，或點擊選擇</div><div class="mgmt-dropzone-hint">支援 JPG、PNG、GIF、WebP，可多選</div><input type="file" id="mgmtFileIn" multiple accept="image/*,video/mp4,video/webm" style="display:none"></div>`;
         if (this.files.length > 0) {
             html += `<div style="color:#94a3b8;font-size:13px;margin-bottom:6px">已選擇 ${this.files.length} 個文件</div>
                 <div class="mgmt-preview">${this.files.map((f, i) => '<div class="mgmt-preview-item"><img src="' + URL.createObjectURL(f) + '"><button class="mgmt-preview-remove" onclick="event.stopPropagation();galleryManager.removeFile(' + i + ')">✕</button></div>').join('')}</div>
@@ -306,9 +306,9 @@ class GalleryManager {
         input.onchange = e => { this.addFiles(Array.from(e.target.files)); e.target.value = ''; };
     }
     addFiles(incoming) {
-        const imgs = incoming.filter(f => f.type.startsWith('image/'));
-        if (!imgs.length) { this.toast('請選擇圖片文件', 'error'); return; }
-        this.files = [...this.files, ...imgs]; this.render();
+        const allowed = incoming.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/'));
+        if (!allowed.length) { this.toast('請選擇圖片或影片文件', 'error'); return; }
+        this.files = [...this.files, ...allowed]; this.render();
     }
     removeFile(i) { this.files.splice(i, 1); this.render(); }
     clearFiles() { this.files = []; this.render(); }
