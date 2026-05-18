@@ -1,6 +1,6 @@
 // ═══ 全域狀態 ═══
 let reverseMode = localStorage.getItem('reverseMode') === 'true';
-let currentTab = 'gallery'; // 'gallery' | 'video'
+let currentTab = 'gallery';
 let galleryDatabase = [];
 let videoDatabase = [];
 let activeFilters = { character: [], tags: [] };
@@ -11,108 +11,86 @@ const USE_B2 = true;
 const PLACEHOLDER_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
 
 let fsAutoPlayInterval = null;
-let fsProgressInterval = null;
 let autoPlaySpeed = 10000;
 let isFsAutoPlaying = false;
-let progressStartTime = 0;
+
+// ═══════════════════════════════════════════════════════
+//  離屏圖片載入佇列（核心優化）
+//  圖片永遠不以 <img> 插入 DOM，避免動態 WebP 動畫合成
+//  用離屏 Image() 載入 → drawImage 到 <canvas> → 銷毀 Image
+// ═══════════════════════════════════════════════════════
+const _MAX_LOAD = 2;       // iPad 同時最多 2 張
+let _loadN = 0;
+const _loadQ = [];
+
+function queueCanvasLoad(canvas, url, maxDim, onErr) {
+    const task = { canvas, url, maxDim: maxDim || 400, onErr };
+    if (_loadN < _MAX_LOAD) { _loadN++; _execLoad(task); }
+    else _loadQ.push(task);
+}
+
+function _execLoad(task) {
+    const { canvas, url, maxDim, onErr } = task;
+    if (!canvas.isConnected) { _loadN--; _drainQueue(); return; }
+
+    const offscreen = new Image();          // ← 離屏，不插入 DOM
+    offscreen.onload = function () {
+        if (!canvas.isConnected) { _killImg(offscreen); return; }
+        let w = this.naturalWidth, h = this.naturalHeight;
+        if (w > maxDim || h > maxDim) {
+            const r = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * r); h = Math.round(h * r);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        try { canvas.getContext('2d').drawImage(this, 0, 0, w, h); } catch (_) {}
+        canvas.style.opacity = '1';
+        // 隱藏同層佔位符
+        const ph = canvas.parentElement && canvas.parentElement.querySelector('.placeholder-cover');
+        if (ph) ph.style.display = 'none';
+        _killImg(offscreen);
+    };
+    offscreen.onerror = function () {
+        if (onErr) onErr(canvas);
+        _killImg(offscreen);
+    };
+    offscreen.src = url;                    // 開始載入（離屏）
+}
+
+function _killImg(img) {
+    img.onload = img.onerror = null;
+    img.src = '';                           // 釋放記憶體
+    _loadN--;
+    _drainQueue();
+}
+
+function _drainQueue() {
+    while (_loadQ.length && _loadN < _MAX_LOAD) {
+        const t = _loadQ.shift();
+        if (t.canvas.isConnected) { _loadN++; _execLoad(t); }
+    }
+}
+
+function flushLoadQueue() { _loadQ.length = 0; }
 
 // ═══ 懶載入 Observer ═══
 let coverObserver = null;
 let gridObserver = null;
 
-// ═══ 並行載入控制 ═══
-const MAX_CONCURRENT_LOADS = 3;
-let activeLoads = 0;
-const loadQueue = [];
-
-function enqueueImageLoad(img, src) {
-    if (activeLoads < MAX_CONCURRENT_LOADS) {
-        activeLoads++;
-        doLoadImage(img, src);
-    } else {
-        loadQueue.push({ img, src });
-    }
-}
-
-function doLoadImage(img, src) {
-    img.onload = function () {
-        freezeToCanvas(this);
-        activeLoads--;
-        processLoadQueue();
-    };
-    img.onerror = function () {
-        activeLoads--;
-        processLoadQueue();
-        // 觸發原本的 onerror（placeholder）
-        const gid = this.dataset.gid;
-        const idx = parseInt(this.dataset.idx);
-        if (gid) handleGridImageError(this, gid, idx);
-    };
-    img.src = src;
-}
-
-function processLoadQueue() {
-    while (loadQueue.length > 0 && activeLoads < MAX_CONCURRENT_LOADS) {
-        const next = loadQueue.shift();
-        // 確認元素還在 DOM 中（沒被關閉）
-        if (next.img.isConnected) {
-            activeLoads++;
-            doLoadImage(next.img, next.src);
-        }
-    }
-}
-
-// ═══ Canvas 凍結第一幀（iPad 關鍵優化）═══
-function freezeToCanvas(img) {
-    try {
-        if (!img.naturalWidth || !img.naturalHeight) return;
-        if (!img.isConnected) return;
-
-        const canvas = document.createElement('canvas');
-        // 限制縮圖尺寸，減少記憶體
-        const maxDim = 400;
-        let w = img.naturalWidth;
-        let h = img.naturalHeight;
-        if (w > maxDim || h > maxDim) {
-            const ratio = Math.min(maxDim / w, maxDim / h);
-            w = Math.round(w * ratio);
-            h = Math.round(h * ratio);
-        }
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-
-        // 複製必要屬性
-        canvas.className = img.className + ' frozen-canvas';
-        canvas.style.cssText = 'width:100%;height:100%;object-fit:cover;cursor:pointer;display:block;';
-        canvas.dataset.gid = img.dataset.gid || '';
-        canvas.dataset.idx = img.dataset.idx || '';
-        canvas.onclick = img.onclick;
-
-        // 替換 img → canvas，釋放動態圖記憶體
-        const parent = img.parentNode;
-        if (parent) {
-            parent.replaceChild(canvas, img);
-            img.src = '';
-            img.onload = null;
-            img.onerror = null;
-        }
-    } catch (e) {
-        // canvas 失敗就保留原圖（跨域等情況）
-        console.warn('凍結圖片失敗:', e);
-    }
-}
-
 function setupCoverObserver() {
     if (coverObserver) coverObserver.disconnect();
-    coverObserver = new IntersectionObserver((entries) => {
+    coverObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
-            const img = entry.target;
-            if (entry.isIntersecting && img.dataset.src && !img.src) {
-                img.src = img.dataset.src;
-                img.removeAttribute('data-src');
-                coverObserver.unobserve(img);
+            const c = entry.target;
+            if (entry.isIntersecting && c.dataset.src) {
+                const src = c.dataset.src;
+                c.removeAttribute('data-src');
+                coverObserver.unobserve(c);
+                queueCanvasLoad(c, src, 400, cv => {
+                    cv.style.display = 'none';
+                    const ph = cv.parentElement && cv.parentElement.querySelector('.placeholder-cover');
+                    if (ph) ph.style.display = 'flex';
+                });
             }
         });
     }, { rootMargin: '300px' });
@@ -120,65 +98,63 @@ function setupCoverObserver() {
 
 function setupGridObserver() {
     if (gridObserver) gridObserver.disconnect();
-    gridObserver = new IntersectionObserver((entries) => {
+    gridObserver = new IntersectionObserver(entries => {
         entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                const el = entry.target; // 這是 .grid-image-item div
-                const img = el.querySelector('img');
-                if (img && img.dataset.src) {
-                    const src = img.dataset.src;
-                    img.removeAttribute('data-src');
-                    enqueueImageLoad(img, src);
-                    gridObserver.unobserve(el);
-                }
-            }
+            if (!entry.isIntersecting) return;
+            const item = entry.target;
+            const c = item.querySelector('canvas[data-src]');
+            if (!c) return;
+            const src = c.dataset.src;
+            const gid = c.dataset.gid;
+            const idx = parseInt(c.dataset.idx || '0');
+            c.removeAttribute('data-src');
+            gridObserver.unobserve(item);
+            queueCanvasLoad(c, src, 400, cv => {
+                drawCanvasPlaceholder(cv, gid, idx);
+            });
         });
     }, { rootMargin: '200px' });
 }
 
+function drawCanvasPlaceholder(canvas, gid, idx) {
+    const g = galleryDatabase.find(x => x.id === gid);
+    canvas.width = 200; canvas.height = 150;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = (g && g.color) || '#3b82f6';
+    ctx.fillRect(0, 0, 200, 150);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(idx + 1), 100, 75);
+    canvas.style.opacity = '1';
+}
+
+// ═══ URL / HTML 工具 ═══
 function buildB2Url(...segs) {
     const s = segs.filter(s => s && s !== '').map(s => s.replace(/^\/+|\/+$/g, ''));
     return (B2_BASE_URL + '/' + s.join('/')).replace(/([^:]\/)\/+/g, '$1');
 }
-
 function escHtml(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
 function escAttr(str) { return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
-// ═══ 主頁籤切換 ═══
-function switchMainTab(tab) {
-    document.querySelectorAll('.main-tab').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tab);
-    });
-    document.getElementById('gallerySection').style.display = tab === 'gallery' ? '' : 'none';
-    document.getElementById('videoSection').style.display = tab === 'video' ? '' : 'none';
-    document.querySelector('.sidebar').style.display = tab === 'gallery' ? '' : 'none';
-    if (tab === 'video') {
-        loadVideos();
-    }
-}
-
-// ═══ 影片功能 ═══
+// ═══ 影片功能（獨立 fetch 版，保留相容）═══
 async function loadVideos() {
     const container = document.getElementById('videoView');
     container.innerHTML = '<div class="loading"><i class="fas fa-spinner fa-spin"></i> 載入中...</div>';
-
     try {
         const resp = await fetch(B2_CONFIG.workerUrl + '/api/videos');
         const videos = await resp.json();
-
         if (!Array.isArray(videos) || videos.length === 0) {
             container.innerHTML = '<div style="text-align:center;padding:60px;color:#999;"><i class="fas fa-film" style="font-size:48px;margin-bottom:15px;display:block;"></i>尚無影片鏈接</div>';
             return;
         }
-
         container.innerHTML = videos.map(v => `
-            <a href="${v.url}" target="_blank" rel="noopener noreferrer" 
+            <a href="${v.url}" target="_blank" rel="noopener noreferrer"
                class="gallery-card" style="text-decoration:none;color:inherit;display:block;">
                 <div class="gallery-cover" style="position:relative;">
                     ${v.thumbnail
                         ? `<img src="${v.thumbnail}" alt="${v.title}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;">`
-                        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1a2e;"><i class="fas fa-play-circle" style="font-size:48px;color:#e94560;"></i></div>`
-                    }
+                        : `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1a2e;"><i class="fas fa-play-circle" style="font-size:48px;color:#e94560;"></i></div>`}
                     <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:40px;color:rgba(255,255,255,0.8);text-shadow:0 0 20px rgba(0,0,0,0.8);">
                         <i class="fas fa-play-circle"></i>
                     </div>
@@ -189,7 +165,6 @@ async function loadVideos() {
                 </div>
             </a>
         `).join('');
-
     } catch (e) {
         container.innerHTML = `<div style="text-align:center;padding:60px;color:#e94560;"><i class="fas fa-exclamation-triangle"></i> 載入失敗：${e.message}</div>`;
     }
@@ -219,17 +194,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (header) {
         const right = document.createElement('div');
         right.style.cssText = 'display:flex;gap:10px;align-items:flex-start;';
-
         const settingsBtn = document.createElement('button');
         settingsBtn.className = 'btn-settings';
         settingsBtn.innerHTML = '<i class="fas fa-sliders-h"></i>';
         settingsBtn.onclick = openSettings;
-
         const manageBtn = document.createElement('button');
         manageBtn.className = 'btn-manage';
         manageBtn.innerHTML = '<i class="fas fa-cog"></i> 管理';
         manageBtn.onclick = openManagementPage;
-
         right.appendChild(settingsBtn);
         right.appendChild(manageBtn);
         header.appendChild(right);
@@ -237,15 +209,12 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     if (!document.getElementById('managementPanel')) {
         const p = document.createElement('div');
-        p.id = 'managementPanel';
-        p.className = 'management-panel';
-        p.style.display = 'none';
+        p.id = 'managementPanel'; p.className = 'management-panel'; p.style.display = 'none';
         document.body.appendChild(p);
     }
     if (!document.getElementById('settingsPanel')) {
         const p = document.createElement('div');
-        p.id = 'settingsPanel';
-        p.style.display = 'none';
+        p.id = 'settingsPanel'; p.style.display = 'none';
         document.body.appendChild(p);
     }
 });
@@ -257,12 +226,13 @@ window.switchMainTab = function (tab) {
     document.querySelectorAll('.main-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.getElementById('gallerySection').style.display = tab === 'gallery' ? '' : 'none';
     document.getElementById('videoSection').style.display = tab === 'video' ? '' : 'none';
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar) sidebar.style.display = tab === 'gallery' ? '' : 'none';
 
     activeFilters = { character: [], tags: [] };
     document.querySelectorAll('.sidebar .tag.selected').forEach(t => t.classList.remove('selected'));
     updateStats();
     updateTagFilters();
-
     if (tab === 'gallery') renderGalleryList(galleryDatabase);
     else renderVideoList(videoDatabase);
 };
@@ -288,10 +258,7 @@ async function loadVideoData() {
             if (!v.character) v.character = [];
             if (!v.tags) v.tags = [];
         });
-    } catch (e) {
-        console.warn('載入影片數據失敗:', e);
-        videoDatabase = [];
-    }
+    } catch (e) { console.warn('載入影片數據失敗:', e); videoDatabase = []; }
 }
 
 // ═══ 圖庫封面處理 ═══
@@ -353,7 +320,7 @@ function buildTagList(containerId, tagSet, type) {
     Array.from(tagSet).sort((a, b) => a.localeCompare(b, 'zh-TW')).forEach(text => {
         const el = document.createElement('span');
         el.className = 'tag';
-        if (activeFilters[type]?.includes(text)) el.classList.add('selected');
+        if (activeFilters[type] && activeFilters[type].includes(text)) el.classList.add('selected');
         el.textContent = text;
         el.dataset.type = type;
         el.dataset.value = text;
@@ -409,11 +376,10 @@ window.clearAllFilters = function () {
     else renderVideoList(videoDatabase);
 };
 
-// ═══ 圖庫渲染（懶載入 + Canvas 凍結優化）═══
+// ═══ 圖庫渲染（Canvas 離屏載入）═══
 function renderGalleryList(galleries) {
     const container = document.getElementById('galleryView');
     if (!container) return;
-
     if (coverObserver) coverObserver.disconnect();
     setupCoverObserver();
 
@@ -426,8 +392,7 @@ function renderGalleryList(galleries) {
     container.innerHTML = galleries.map(g => `
         <div class="gallery-card" onclick="openGalleryViewer('${g.id}')">
             <div class="gallery-cover-container">
-                <img data-src="${g.coverImage || ''}" alt="${escHtml(g.name)}" class="gallery-cover lazy-cover"
-                     onerror="handleCoverImageError(this,'${g.id}')" decoding="async">
+                <canvas data-src="${g.coverImage || ''}" class="gallery-cover lazy-cover" style="opacity:0;"></canvas>
                 <div class="placeholder-cover" style="background-color:${g.color};display:none;">
                     <div class="placeholder-text">${g.initials}</div>
                 </div>
@@ -442,14 +407,13 @@ function renderGalleryList(galleries) {
         </div>
     `).join('');
 
-    container.querySelectorAll('img.lazy-cover').forEach(img => {
-        coverObserver.observe(img);
-    });
+    container.querySelectorAll('canvas.lazy-cover').forEach(c => coverObserver.observe(c));
 }
 
-window.handleCoverImageError = function (img, id) {
-    img.style.display = 'none';
-    const p = img.nextElementSibling;
+// 向後相容（其他檔案可能呼叫）
+window.handleCoverImageError = function (el, id) {
+    el.style.display = 'none';
+    const p = el.nextElementSibling;
     if (p) p.style.display = 'flex';
 };
 
@@ -589,10 +553,7 @@ async function loadGalleryImages(gallery) {
     const grid = document.getElementById('imageGrid-' + gallery.id);
     if (!grid) return;
     grid.innerHTML = '';
-
-    // 清空載入佇列
-    loadQueue.length = 0;
-    activeLoads = 0;
+    flushLoadQueue();
 
     if (gridObserver) gridObserver.disconnect();
     setupGridObserver();
@@ -607,75 +568,65 @@ async function loadGalleryImages(gallery) {
         }
         return;
     }
+
     files.forEach((path, idx) => {
         const d = document.createElement('div');
         d.className = 'grid-image-item';
-        d.innerHTML = `<img data-src="${path}" alt="${escHtml(gallery.name)} - ${idx + 1}" 
-            class="lazy-grid-img" decoding="async"
-            data-gid="${gallery.id}" data-idx="${idx}"
-            onclick="openImageFullscreen('${gallery.id}',${idx})">`;
+        d.style.cursor = 'pointer';
+        d.style.backgroundColor = gallery.color;
+        d.onclick = function () { openImageFullscreen(gallery.id, idx); };
+        // Canvas 取代 <img>，避免動態圖在 DOM 中播放
+        d.innerHTML = `<canvas data-src="${path}" data-gid="${gallery.id}" data-idx="${idx}"
+            class="grid-canvas" style="width:100%;height:100%;object-fit:cover;display:block;opacity:0;"></canvas>`;
         grid.appendChild(d);
     });
 
-    // 用 Observer 控制載入：進入視窗 → 載入 → 凍結成 canvas
     grid.querySelectorAll('.grid-image-item').forEach(item => {
         gridObserver.observe(item);
     });
 }
 
-window.handleGridImageError = function (img, gid, idx) {
-    const g = galleryDatabase.find(g => g.id === gid);
-    if (g) {
-        img.onload = null;
-        img.onerror = null;
-        img.src = createPlaceholderSVG(g, idx + 1);
+// 向後相容
+window.handleGridImageError = function (el, gid, idx) {
+    const g = galleryDatabase.find(x => x.id === gid);
+    if (g && el.tagName === 'IMG') {
+        el.src = createPlaceholderSVG(g, idx + 1);
+        el.onerror = null;
     }
 };
 
-// ═══ 全屏瀏覽器（優化：只載入當前 ±1 張）═══
-window.fsLeftClick = function () { reverseMode ? fsNextImage() : fsPrevImage(); };
-window.fsRightClick = function () { reverseMode ? fsPrevImage() : fsNextImage(); };
+// ═══ 全屏瀏覽器（只載入當前 ±1 張）═══
+let _fsCache = {};
 
-// 全屏預載入快取（最多保留 3 張）
-let fsImageCache = {};
-
-function fsClearCache() {
-    for (const key in fsImageCache) {
-        if (fsImageCache[key] && fsImageCache[key].src) {
-            fsImageCache[key].src = '';
-        }
-    }
-    fsImageCache = {};
+function _fsClearCache() {
+    Object.values(_fsCache).forEach(img => { if (img && img.src) img.src = ''; });
+    _fsCache = {};
 }
 
-function fsPreloadAround(index) {
+function _fsPreload(index) {
     if (!window.fullscreenImages) return;
-    const total = window.fullscreenImages.length;
-    const needed = new Set();
-    for (let offset = -1; offset <= 1; offset++) {
-        let i = index + offset;
-        if (i < 0) i = total - 1;
-        if (i >= total) i = 0;
-        needed.add(i);
-    }
-    // 清掉不需要的快取
-    for (const key in fsImageCache) {
-        if (!needed.has(parseInt(key))) {
-            if (fsImageCache[key] && fsImageCache[key].src) {
-                fsImageCache[key].src = '';
-            }
-            delete fsImageCache[key];
+    const len = window.fullscreenImages.length;
+    const keep = new Set();
+    for (let d = -1; d <= 1; d++) keep.add((index + d + len) % len);
+    // 清掉不需要的
+    Object.keys(_fsCache).forEach(k => {
+        if (!keep.has(parseInt(k))) {
+            if (_fsCache[k]) _fsCache[k].src = '';
+            delete _fsCache[k];
         }
-    }
+    });
     // 預載入需要的
-    needed.forEach(i => {
-        if (!fsImageCache[i] && window.fullscreenImages[i]) {
+    keep.forEach(i => {
+        if (!_fsCache[i] && window.fullscreenImages[i]) {
             const img = new Image();
             img.src = window.fullscreenImages[i];
-            fsImageCache[i] = img;
+            _fsCache[i] = img;
         }
     });
 }
+
+window.fsLeftClick = function () { reverseMode ? fsNextImage() : fsPrevImage(); };
+window.fsRightClick = function () { reverseMode ? fsPrevImage() : fsNextImage(); };
 
 window.openImageFullscreen = function (galleryId, imageIndex) {
     const gallery = galleryDatabase.find(g => g.id === galleryId);
@@ -684,18 +635,15 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
     window.fullscreenImages = images;
     window.currentFsIndex = imageIndex;
     window.currentGalleryId = galleryId;
-
-    fsClearCache();
+    _fsClearCache();
 
     const fs = document.getElementById('fullscreenViewer');
     if (!fs) return;
     fs.classList.toggle('reversed', reverseMode);
-
-    // 進度條改為單一進度條，不再為每張圖建 DOM
     fs.innerHTML = `
         <div class="fs-progress-container">
             <div class="fs-progress-bar" style="width:100%;">
-                <div class="fs-progress-fill" id="fsProgressFill" style="width:0%;transition:none;"></div>
+                <div class="fs-progress-fill" id="fsProgressFill" style="width:0%;transition:width 0.2s;"></div>
             </div>
         </div>
         <button class="fs-close-btn" onclick="closeFullscreen()"><i class="fas fa-times"></i></button>
@@ -727,11 +675,7 @@ function updateFullscreenImage() {
         updateFsSpeedDisplay();
         const g = galleryDatabase.find(g => g.id === window.currentGalleryId);
         img.onerror = function () { this.src = createPlaceholderSVG(g || {}, window.currentFsIndex + 1); this.onerror = null; };
-
-        // 預載入前後各一張
-        fsPreloadAround(window.currentFsIndex);
-
-        // 更新進度條
+        _fsPreload(window.currentFsIndex);
         updateProgressBar();
     }
 }
@@ -740,7 +684,7 @@ function updateProgressBar() {
     const fill = document.getElementById('fsProgressFill');
     if (!fill || !window.fullscreenImages) return;
     const total = window.fullscreenImages.length;
-    const pct = total > 1 ? ((window.currentFsIndex) / (total - 1)) * 100 : 100;
+    const pct = total > 1 ? (window.currentFsIndex / (total - 1)) * 100 : 100;
     fill.style.width = pct + '%';
 }
 
@@ -759,22 +703,17 @@ window.fsNextImage = function () {
 window.closeFullscreen = function () {
     const fs = document.getElementById('fullscreenViewer');
     if (fs) {
-        // 清除全屏圖片釋放記憶體
         const img = document.getElementById('fsImage');
         if (img) img.src = '';
         fs.style.display = 'none';
     }
-    fsClearCache();
+    _fsClearCache();
     stopFsAutoPlay();
     isFsAutoPlaying = false;
 };
 window.closeGalleryViewer = function () {
-    // 清空載入佇列
-    loadQueue.length = 0;
-    activeLoads = 0;
-
+    flushLoadQueue();
     if (gridObserver) gridObserver.disconnect();
-
     const v = document.querySelector('.gallery-viewer');
     if (v) v.remove();
     closeFullscreen();
@@ -794,7 +733,7 @@ window.nextImage = function () {
     }
 };
 
-// ═══ 自動播放 ═══
+// ═══ 自動播放（無 requestAnimationFrame 迴圈，省 CPU）═══
 window.fsToggleAutoPlay = function () { isFsAutoPlaying ? stopFsAutoPlay() : startFsAutoPlay(); };
 
 function startFsAutoPlay() {
@@ -802,31 +741,14 @@ function startFsAutoPlay() {
     const icon = document.getElementById('fsAutoPlayIcon');
     if (icon) icon.className = 'fas fa-pause';
     isFsAutoPlaying = true;
-    startProgressAnimation();
-    fsAutoPlayInterval = setTimeout(() => fsNextImage(), autoPlaySpeed);
+    fsAutoPlayInterval = setTimeout(function () { fsNextImage(); }, autoPlaySpeed);
 }
 
 function stopFsAutoPlay() {
     if (fsAutoPlayInterval) { clearTimeout(fsAutoPlayInterval); fsAutoPlayInterval = null; }
-    stopProgressAnimation();
     const icon = document.getElementById('fsAutoPlayIcon');
     if (icon) icon.className = 'fas fa-play';
     isFsAutoPlaying = false;
-}
-
-function startProgressAnimation() {
-    stopProgressAnimation();
-    progressStartTime = Date.now();
-    fsProgressInterval = requestAnimationFrame(animateAutoPlayProgress);
-}
-function stopProgressAnimation() {
-    if (fsProgressInterval) { cancelAnimationFrame(fsProgressInterval); fsProgressInterval = null; }
-}
-function animateAutoPlayProgress() {
-    if (!isFsAutoPlaying) return;
-    // 自動播放時用 fsProgressFill 來顯示倒數
-    // 這裡不覆蓋位置進度條，而是改用 opacity 閃爍提示
-    fsProgressInterval = requestAnimationFrame(animateAutoPlayProgress);
 }
 
 window.fsChangeSpeed = function (dir) {
@@ -846,9 +768,10 @@ function updateFsSpeedDisplay() {
     if (el) el.textContent = s + '秒/張';
 }
 
-window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', function () {
     stopFsAutoPlay();
-    fsClearCache();
+    _fsClearCache();
+    flushLoadQueue();
     if (gridObserver) gridObserver.disconnect();
     if (coverObserver) coverObserver.disconnect();
 });
