@@ -1701,3 +1701,20 @@ img, canvas {
 .grid-video-item:hover .grid-video-placeholder i {
     color: #fff;
 }
+
+/* ═══ 封面 <img> 淡入 ═══ */
+.gallery-cover-img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 1;
+    pointer-events: none;
+}
+.gallery-cover-img.loaded {
+    opacity: 1;
+}
