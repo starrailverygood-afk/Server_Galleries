@@ -18,7 +18,7 @@ let isFsAutoPlaying = false;
 const THEMES = [
     { id: '', name: '深藍', color: '#3b82f6', bg: '#0f172a' },
     { id: 'theme-purple', name: '暗紫', color: '#8b5cf6', bg: '#13111c' },
-    { id: 'theme-green', name: '翡翠', color: '#10b981', bg: '#0a1610' },
+    { id: 'theme-green', name: '純白', color: '#3b82f6', bg: '#ffffff' },
     { id: 'theme-rose', name: '玫瑰', color: '#f43f5e', bg: '#18080d' },
     { id: 'theme-black', name: '純黑', color: '#3b82f6', bg: '#000000' },
     { id: 'theme-amber', name: '琥珀', color: '#f59e0b', bg: '#14100a' },
