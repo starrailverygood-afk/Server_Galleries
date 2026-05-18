@@ -14,6 +14,32 @@ let fsAutoPlayInterval = null;
 let autoPlaySpeed = 10000;
 let isFsAutoPlaying = false;
 
+// ═══ ★ 主題系統 ═══
+const THEMES = [
+    { id: '', name: '深藍', color: '#3b82f6', bg: '#0f172a' },
+    { id: 'theme-purple', name: '暗紫', color: '#8b5cf6', bg: '#13111c' },
+    { id: 'theme-green', name: '翡翠', color: '#10b981', bg: '#0a1610' },
+    { id: 'theme-rose', name: '玫瑰', color: '#f43f5e', bg: '#18080d' },
+    { id: 'theme-black', name: '純黑', color: '#3b82f6', bg: '#000000' },
+    { id: 'theme-amber', name: '琥珀', color: '#f59e0b', bg: '#14100a' },
+];
+let currentTheme = localStorage.getItem('selectedTheme') || '';
+
+// 立即套用已儲存的主題（避免閃爍）
+(function () {
+    if (currentTheme) document.documentElement.classList.add(currentTheme);
+})();
+
+window.setTheme = function (themeId) {
+    document.documentElement.className = document.documentElement.className.replace(/theme-\w+/g, '').trim();
+    if (themeId) document.documentElement.classList.add(themeId);
+    currentTheme = themeId;
+    localStorage.setItem('selectedTheme', themeId);
+    document.querySelectorAll('.theme-option').forEach(el => {
+        el.classList.toggle('active', (el.dataset.theme || '') === themeId);
+    });
+};
+
 // ═══ ★ 檔案類型判斷 ═══
 function isVideoFile(path) {
     if (!path) return false;
@@ -179,6 +205,9 @@ async function loadVideos() {
 
 // ═══ 初始化 ═══
 document.addEventListener('DOMContentLoaded', async function () {
+    // 套用主題到 body（補上，以免 CSS 選擇器用到 body）
+    if (currentTheme) document.body.classList.add(currentTheme);
+
     const loading = document.getElementById('loading');
     if (loading) loading.style.display = 'none';
 
@@ -268,7 +297,7 @@ async function loadVideoData() {
     } catch (e) { console.warn('載入影片數據失敗:', e); videoDatabase = []; }
 }
 
-// ═══ ★ 圖庫封面處理（影片感知）═══
+// ═══ 圖庫封面處理 ═══
 function processGalleryCovers() {
     for (const g of galleryDatabase) {
         g.color = PLACEHOLDER_COLORS[(parseInt(g.id.replace('gallery-', '')) || 0) % PLACEHOLDER_COLORS.length];
@@ -492,7 +521,7 @@ function showError(msg) {
         <button onclick="location.reload()" style="margin:5px;padding:10px 20px"><i class="fas fa-redo"></i> 重新載入</button></div>`;
 }
 
-// ═══ 設定面板 ═══
+// ═══ ★ 設定面板（含主題選擇）═══
 window.openSettings = function () {
     const p = document.getElementById('settingsPanel');
     if (!p) return;
@@ -514,6 +543,20 @@ window.openSettings = function () {
                         <input type="checkbox" id="reverseModeToggle" ${reverseMode ? 'checked' : ''} onchange="toggleReverseMode()">
                         <span class="toggle-slider"></span>
                     </label>
+                </div>
+                <div class="settings-item" style="flex-direction:column;align-items:stretch;">
+                    <div class="settings-item-info" style="margin-bottom:14px;">
+                        <h4>主題配色</h4>
+                        <p>選擇喜歡的配色方案</p>
+                    </div>
+                    <div class="theme-grid">
+                        ${THEMES.map(t => `
+                            <div class="theme-option${currentTheme === t.id ? ' active' : ''}" data-theme="${t.id}" onclick="setTheme('${t.id}')">
+                                <div class="theme-swatch" style="background:${t.bg};box-shadow:inset 0 -18px 0 ${t.color};"></div>
+                                <span class="theme-name">${t.name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -563,7 +606,7 @@ window.openGalleryViewer = function (galleryId) {
     window.galleryImages = gallery.fullImagePaths || [];
 };
 
-// ═══ ★ loadGalleryImages — 影片感知 ═══
+// ═══ loadGalleryImages ═══
 async function loadGalleryImages(gallery) {
     const grid = document.getElementById('imageGrid-' + gallery.id);
     if (!grid) return;
@@ -619,20 +662,15 @@ window.handleGridImageError = function (el, gid, idx) {
 };
 
 // ═══════════════════════════════════════════════════════
-//  ★ 全屏瀏覽器 — 影片預載入池（無縫切換）
+//  ★ 全屏瀏覽器 — 影片預載入池 ±5（無縫切換）
 // ═══════════════════════════════════════════════════════
 
-// 圖片快取（保持原有）
 let _fsCache = {};
-
-// ★ 新增：影片元素池  index → { video: HTMLVideoElement, ready: bool }
 let _fsVideoPool = {};
 
 function _fsClearCache() {
-    // 清圖片快取
     Object.values(_fsCache).forEach(img => { if (img && img.src) img.src = ''; });
     _fsCache = {};
-    // 清影片池
     _fsClearVideoPool();
 }
 
@@ -646,7 +684,6 @@ function _fsClearVideoPool() {
     _fsVideoPool = {};
 }
 
-// ★ 為指定 index 準備一個 <video> 元素（如已存在則復用）
 function _fsPrepareVideo(index) {
     if (!window.fullscreenImages) return null;
     const src = window.fullscreenImages[index];
@@ -663,9 +700,8 @@ function _fsPrepareVideo(index) {
 
     const entry = { video, ready: false };
     video.addEventListener('canplaythrough', () => { entry.ready = true; }, { once: true });
-    video.load(); // 開始緩衝
+    video.load();
 
-    // 掛進 DOM（某些手機瀏覽器需要在 DOM 內才會緩衝）
     const container = document.getElementById('fsContainer');
     if (container) container.appendChild(video);
 
@@ -673,21 +709,20 @@ function _fsPrepareVideo(index) {
     return entry;
 }
 
-// ★ 統一預載入：圖片 + 影片，保留 [-1, 0, +1, +2] 共 4 個
+// ★ 預載入範圍：±5（共 11 個）
 function _fsPreload(index) {
     if (!window.fullscreenImages) return;
     const len = window.fullscreenImages.length;
     const keep = new Set();
-    for (let d = -1; d <= 2; d++) keep.add((index + d + len) % len);
+    for (let d = -5; d <= 5; d++) keep.add((index + d + len) % len);
 
-    // — 清理圖片快取 —
+    // 清理圖片快取
     Object.keys(_fsCache).forEach(k => {
         if (!keep.has(parseInt(k))) {
             if (_fsCache[k]) _fsCache[k].src = '';
             delete _fsCache[k];
         }
     });
-    // 預載入圖片
     keep.forEach(i => {
         const s = window.fullscreenImages[i];
         if (s && !isVideoFile(s) && !_fsCache[i]) {
@@ -697,7 +732,7 @@ function _fsPreload(index) {
         }
     });
 
-    // — 清理影片池 —
+    // 清理影片池
     Object.keys(_fsVideoPool).forEach(k => {
         const ki = parseInt(k);
         if (!keep.has(ki)) {
@@ -709,7 +744,6 @@ function _fsPreload(index) {
             delete _fsVideoPool[ki];
         }
     });
-    // 預載入影片
     keep.forEach(i => {
         const s = window.fullscreenImages[i];
         if (s && isVideoFile(s) && !_fsVideoPool[i]) {
@@ -718,10 +752,28 @@ function _fsPreload(index) {
     });
 }
 
-window.fsLeftClick = function () { reverseMode ? fsNextImage() : fsPrevImage(); };
-window.fsRightClick = function () { reverseMode ? fsPrevImage() : fsNextImage(); };
+// ═══ ★ 全屏控制項自動隱藏（4 秒無操作）═══
+let _fsIdleTimer = null;
 
-// ★ openImageFullscreen — 移除靜態 <video>，改用池
+function _fsShowControls() {
+    const fs = document.getElementById('fullscreenViewer');
+    if (!fs || fs.style.display === 'none') return;
+    fs.classList.add('fs-active');
+    clearTimeout(_fsIdleTimer);
+    _fsIdleTimer = setTimeout(() => {
+        if (fs) fs.classList.remove('fs-active');
+    }, 4000);
+}
+
+window.fsLeftClick = function () {
+    _fsShowControls();
+    reverseMode ? fsNextImage() : fsPrevImage();
+};
+window.fsRightClick = function () {
+    _fsShowControls();
+    reverseMode ? fsPrevImage() : fsNextImage();
+};
+
 window.openImageFullscreen = function (galleryId, imageIndex) {
     const gallery = galleryDatabase.find(g => g.id === galleryId);
     if (!gallery) return;
@@ -734,6 +786,7 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
     const fs = document.getElementById('fullscreenViewer');
     if (!fs) return;
     fs.classList.toggle('reversed', reverseMode);
+    fs.classList.add('fs-active');
     fs.innerHTML = `
         <div class="fs-progress-container">
             <div class="fs-progress-bar" style="width:100%;">
@@ -756,10 +809,17 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
             <span class="fs-speed-info" id="fsSpeedInfo">${autoPlaySpeed / 1000}秒/張</span>
         </div>`;
     fs.style.display = 'block';
+
+    // 綁定活動偵測（每次新建 DOM 都要重綁）
+    ['mousemove', 'mousedown', 'touchstart', 'keydown'].forEach(evt => {
+        fs.addEventListener(evt, _fsShowControls, { passive: true });
+    });
+    _fsShowControls(); // 啟動 4 秒倒數
+
     updateFullscreenImage();
 };
 
-// ═══ ★ updateFullscreenImage — 無縫影片切換 ═══
+// ═══ updateFullscreenImage — 無縫影片切換 ═══
 function updateFullscreenImage() {
     if (!window.fullscreenImages) return;
     const idx = window.currentFsIndex;
@@ -769,27 +829,22 @@ function updateFullscreenImage() {
 
     if (!src) return;
 
-    // ★ 先隱藏 + 暫停所有池中影片
+    // 先隱藏 + 暫停所有池中影片
     Object.values(_fsVideoPool).forEach(entry => {
         entry.video.pause();
         entry.video.style.display = 'none';
     });
 
     if (isVideoFile(src)) {
-        // ── 影片模式 ──
         if (img) { img.style.display = 'none'; img.removeAttribute('src'); }
-
-        // 從池中取出（或即時建立）
         let entry = _fsVideoPool[idx];
         if (!entry) entry = _fsPrepareVideo(idx);
-
         if (entry) {
             entry.video.style.display = 'block';
             entry.video.currentTime = 0;
             entry.video.play().catch(() => {});
         }
     } else {
-        // ── 圖片模式 ──
         if (img) {
             img.style.display = 'block';
             img.src = src;
@@ -801,8 +856,6 @@ function updateFullscreenImage() {
     if (info) info.textContent = (idx + 1) + ' / ' + window.fullscreenImages.length;
     updateFsSpeedDisplay();
     updateProgressBar();
-
-    // ★ 預載入前後的圖片 & 影片
     _fsPreload(idx);
 }
 
@@ -827,8 +880,10 @@ window.fsNextImage = function () {
     if (isFsAutoPlaying) startFsAutoPlay();
 };
 
-// ═══ ★ closeFullscreen — 清理影片池 ═══
+// ═══ closeFullscreen — 清理影片池 + idle timer ═══
 window.closeFullscreen = function () {
+    clearTimeout(_fsIdleTimer);
+    _fsIdleTimer = null;
     const fs = document.getElementById('fullscreenViewer');
     if (fs) {
         const img = document.getElementById('fsImage');
