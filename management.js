@@ -24,6 +24,8 @@ const MGMT_CSS = `
 .mgmt-btn.ghost{background:#334155;color:#cbd5e1}
 .mgmt-btn.ghost:hover:not(:disabled){background:#475569}
 .mgmt-btn.sm{padding:5px 9px;font-size:12px}
+.mgmt-btn.warning{background:#d97706;color:#fff}
+.mgmt-btn.warning:hover:not(:disabled){background:#b45309}
 .mgmt-form{background:#0f172a;border-radius:10px;padding:18px 20px;margin-bottom:14px}
 .mgmt-form h3{margin:0 0 14px;color:#e2e8f0;font-size:15px;font-weight:600}
 .mgmt-field{margin-bottom:11px}
@@ -70,6 +72,12 @@ const MGMT_CSS = `
 .mgmt-cover-row input{flex:1}
 .mgmt-cover-preview{margin-top:8px}
 .mgmt-cover-preview img{max-width:120px;max-height:80px;border-radius:6px;border:1px solid #334155}
+.mgmt-thumb-progress{background:#0f172a;border-radius:10px;padding:16px;margin-bottom:14px}
+.mgmt-thumb-progress h4{color:#e2e8f0;font-size:14px;margin:0 0 10px;font-weight:600}
+.mgmt-thumb-log{color:#94a3b8;font-size:12px;max-height:160px;overflow-y:auto;line-height:1.8}
+.mgmt-thumb-log .ok{color:#34d399}
+.mgmt-thumb-log .fail{color:#f87171}
+.mgmt-thumb-log .skip{color:#64748b}
 @media(max-width:640px){.mgmt-dialog{width:96%;max-height:92vh;border-radius:12px}.mgmt-body{padding:16px}.mgmt-item{flex-direction:column;align-items:stretch}.mgmt-item-actions{justify-content:flex-end;margin-top:8px}.mgmt-batch-grid{grid-template-columns:repeat(auto-fill,minmax(70px,1fr))}}
 `;
 
@@ -85,9 +93,9 @@ class GalleryManager {
         this.targetId = '';
         this.uploading = false;
         this.selectedImages = new Set();
-        // 影片
         this.videoEditIdx = -1;
         this.videoCreating = false;
+        this.batchThumbRunning = false;
     }
 
     injectStyles() {
@@ -140,6 +148,17 @@ class GalleryManager {
     // ═══ 圖庫總覽 ═══
     renderGalleries() {
         let html = '';
+
+        // ★ 批次生成縮圖按鈕
+        const missing = this.galleries.filter(g => !g.coverThumb && g.imageFiles && g.imageFiles.length > 0);
+        if (missing.length > 0 && !this.batchThumbRunning) {
+            html += `<button class="mgmt-btn warning" style="width:100%;padding:11px;margin-bottom:10px" onclick="galleryManager.batchGenerateThumbs()">
+                <i class="fas fa-magic"></i> 批次生成封面縮圖（${missing.length} 個圖庫缺少縮圖）
+            </button>`;
+        }
+        // 進度區域
+        html += `<div id="mgmtThumbProgress"></div>`;
+
         if (this.creating) {
             html += this.renderGalleryForm();
         } else {
@@ -151,7 +170,8 @@ class GalleryManager {
             else {
                 const chars = (g.character || []).join(', ');
                 const tags = (g.tags || []).join(', ');
-                html += `<div class="mgmt-item"><div class="mgmt-item-info"><h4>${this.esc(g.name)}</h4><div class="mgmt-item-meta">${g.fileCount || 0} 張${chars ? ' · ' + this.esc(chars) : ''}${tags ? ' · ' + this.esc(tags) : ''}</div></div>
+                const thumbIcon = g.coverThumb ? '<i class="fas fa-check-circle" style="color:#34d399;margin-left:6px" title="已有縮圖"></i>' : '<i class="fas fa-exclamation-circle" style="color:#f59e0b;margin-left:6px" title="缺少縮圖"></i>';
+                html += `<div class="mgmt-item"><div class="mgmt-item-info"><h4>${this.esc(g.name)}${thumbIcon}</h4><div class="mgmt-item-meta">${g.fileCount || 0} 張${chars ? ' · ' + this.esc(chars) : ''}${tags ? ' · ' + this.esc(tags) : ''}</div></div>
                     <div class="mgmt-item-actions">
                         <button class="mgmt-btn primary sm" onclick="galleryManager.goUpload('${g.id}')"><i class="fas fa-upload"></i></button>
                         <button class="mgmt-btn ghost sm" onclick="galleryManager.startEdit(${i})"><i class="fas fa-edit"></i></button>
@@ -269,10 +289,140 @@ class GalleryManager {
         this.toast('正在刪除...', 'info');
         try {
             for (const f of (g.imageFiles || [])) { try { await this.b2.deleteFile(g.folderPath + '/' + f); } catch {} }
+            // 也刪除縮圖
+            if (g.coverThumb) { try { await this.b2.deleteFile(g.coverThumb); } catch {} }
             this.galleries.splice(index, 1);
             await this.b2.updateGalleries(this.galleries);
             this.toast('圖庫已刪除', 'success'); this.render();
         } catch (e) { this.toast('刪除失敗: ' + e.message, 'error'); }
+    }
+
+    // ═══ 縮圖生成 ═══
+
+    // 從本地 File 物件生成縮圖並上傳
+    async generateCoverThumb(imageFile, gallery) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const MAX_W = 400;
+                    let w = img.naturalWidth, h = img.naturalHeight;
+                    if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+                    const c = document.createElement('canvas');
+                    c.width = w; c.height = h;
+                    c.getContext('2d').drawImage(img, 0, 0, w, h);
+                    c.toBlob(async (blob) => {
+                        if (!blob) { reject(new Error('toBlob failed')); return; }
+                        try {
+                            const thumbName = '_cover_thumb.jpg';
+                            const thumbPath = gallery.folderPath + '/' + thumbName;
+                            const thumbFile = new File([blob], thumbName, { type: 'image/jpeg' });
+                            await this.b2.uploadFile(thumbFile, thumbPath);
+                            gallery.coverThumb = thumbPath;
+                            resolve(thumbPath);
+                        } catch (err) { reject(err); }
+                    }, 'image/jpeg', 0.65);
+                };
+                img.onerror = () => reject(new Error('Image load failed'));
+                img.src = e.target.result;
+            };
+            reader.onerror = () => reject(new Error('FileReader failed'));
+            reader.readAsDataURL(imageFile);
+        });
+    }
+
+    // 從遠端 URL 下載圖片 → 生成縮圖 → 上傳
+    async generateCoverThumbFromUrl(gallery) {
+        const imageFiles = (gallery.imageFiles || []).filter(f => {
+            const ext = f.split('.').pop().toLowerCase();
+            return ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+        });
+        if (imageFiles.length === 0) throw new Error('沒有圖片文件');
+
+        const url = this.getImageUrl(gallery, imageFiles[0]);
+
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                const MAX_W = 400;
+                let w = img.naturalWidth, h = img.naturalHeight;
+                if (w > MAX_W) { h = Math.round(h * MAX_W / w); w = MAX_W; }
+                const c = document.createElement('canvas');
+                c.width = w; c.height = h;
+                c.getContext('2d').drawImage(img, 0, 0, w, h);
+                c.toBlob(async (blob) => {
+                    if (!blob) { reject(new Error('toBlob failed')); return; }
+                    try {
+                        const thumbName = '_cover_thumb.jpg';
+                        const thumbPath = gallery.folderPath + '/' + thumbName;
+                        const thumbFile = new File([blob], thumbName, { type: 'image/jpeg' });
+                        await this.b2.uploadFile(thumbFile, thumbPath);
+                        gallery.coverThumb = thumbPath;
+                        resolve(thumbPath);
+                    } catch (err) { reject(err); }
+                }, 'image/jpeg', 0.65);
+            };
+            img.onerror = () => reject(new Error('無法載入圖片: ' + url));
+            img.src = url;
+        });
+    }
+
+    // ★ 批次生成所有缺少縮圖的圖庫封面
+    async batchGenerateThumbs() {
+        const missing = this.galleries.filter(g => !g.coverThumb && g.imageFiles && g.imageFiles.length > 0);
+        if (missing.length === 0) { this.toast('所有圖庫都已有縮圖', 'success'); return; }
+
+        this.batchThumbRunning = true;
+        this.render();
+
+        const container = document.getElementById('mgmtThumbProgress');
+        if (container) {
+            container.innerHTML = `<div class="mgmt-thumb-progress">
+                <h4><i class="fas fa-magic"></i> 批次生成縮圖中... (0/${missing.length})</h4>
+                <div class="mgmt-progress-bar"><div class="mgmt-progress-fill" id="mgmtThumbFill" style="width:0%"></div></div>
+                <div class="mgmt-thumb-log" id="mgmtThumbLog"></div>
+            </div>`;
+        }
+
+        const fill = document.getElementById('mgmtThumbFill');
+        const log = document.getElementById('mgmtThumbLog');
+        const header = container?.querySelector('h4');
+        let okCount = 0, failCount = 0;
+
+        for (let i = 0; i < missing.length; i++) {
+            const g = missing[i];
+            if (header) header.innerHTML = `<i class="fas fa-spinner fa-spin"></i> 批次生成縮圖中... (${i + 1}/${missing.length})`;
+            if (fill) fill.style.width = ((i + 1) / missing.length * 100) + '%';
+
+            try {
+                await this.generateCoverThumbFromUrl(g);
+                okCount++;
+                if (log) log.innerHTML += `<div class="ok">✓ ${this.esc(g.name)}</div>`;
+            } catch (e) {
+                failCount++;
+                if (log) log.innerHTML += `<div class="fail">✗ ${this.esc(g.name)} — ${this.esc(e.message)}</div>`;
+                console.warn('縮圖生成失敗:', g.name, e);
+            }
+
+            // 自動滾到底
+            if (log) log.scrollTop = log.scrollHeight;
+        }
+
+        // 儲存更新後的資料
+        try {
+            await this.b2.updateGalleries(this.galleries);
+        } catch (e) {
+            console.error('儲存失敗:', e);
+        }
+
+        if (header) header.innerHTML = `<i class="fas fa-check-circle" style="color:#34d399"></i> 完成！成功 ${okCount} 個，失敗 ${failCount} 個`;
+        this.batchThumbRunning = false;
+        this.toast(`縮圖生成完成：成功 ${okCount}，失敗 ${failCount}`, okCount > 0 ? 'success' : 'error');
+
+        // 3 秒後刷新列表
+        setTimeout(() => this.render(), 3000);
     }
 
     // ═══ 上傳圖片 ═══
@@ -336,8 +486,20 @@ class GalleryManager {
         if (newNames.length) {
             gallery.imageFiles = [...gallery.imageFiles, ...newNames];
             gallery.fileCount = gallery.imageFiles.length;
-            try { await this.b2.updateGalleries(this.galleries); } catch (e) { this.toast('更新數據失敗', 'error'); }
         }
+
+        // ★ 自動生成/更新封面縮圖（只在還沒有縮圖時）
+        const firstImage = this.files.find(f => f.type.startsWith('image/'));
+        if (firstImage && !gallery.coverThumb) {
+            if (txt) txt.textContent = '正在生成封面縮圖...';
+            try {
+                await this.generateCoverThumb(firstImage, gallery);
+            } catch (e) {
+                console.warn('縮圖生成失敗，將使用原圖:', e);
+            }
+        }
+
+        try { await this.b2.updateGalleries(this.galleries); } catch (e) { this.toast('更新數據失敗', 'error'); }
         if (ok > 0) this.toast('成功上傳 ' + ok + ' 張圖片', 'success');
         this.uploading = false; this.files = []; this.render();
     }
@@ -460,7 +622,6 @@ class GalleryManager {
     }
     async doVideoDelete(index) {
         const v = this.videos[index];
-        // 如果封面是自己上傳的，嘗試刪除
         if (v.cover && v.cover.includes('video-covers/')) {
             try {
                 const path = v.cover.split('/file/laserpen-gallery-bucket/')[1];
