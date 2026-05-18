@@ -24,7 +24,7 @@ function isVideoFile(path) {
 // ═══════════════════════════════════════════════════════
 //  離屏圖片載入佇列
 // ═══════════════════════════════════════════════════════
-const _MAX_LOAD = 2;
+const _MAX_LOAD = 6;
 let _loadN = 0;
 const _loadQ = [];
 
@@ -276,9 +276,14 @@ function processGalleryCovers() {
         if (g.imageFiles && g.imageFiles.length > 0 && g.folderPath) {
             const base = g.folderPath.replace(/^\/+|\/+$/g, '');
             g.fullImagePaths = g.imageFiles.map(f => buildB2Url(base, f));
-            // ★ 封面優先選圖片檔，跳過影片檔
-            const coverFile = g.imageFiles.find(f => !isVideoFile(f)) || g.imageFiles[0];
-            g.coverImage = isVideoFile(coverFile) ? '' : buildB2Url(base, coverFile);
+
+            // ★ 優先用縮圖（coverThumb），沒有才用原圖
+            if (g.coverThumb) {
+                g.coverImage = g.coverThumb.startsWith('http') ? g.coverThumb : buildB2Url(g.coverThumb);
+            } else {
+                const coverFile = g.imageFiles.find(f => !isVideoFile(f)) || g.imageFiles[0];
+                g.coverImage = isVideoFile(coverFile) ? '' : buildB2Url(base, coverFile);
+            }
         }
     }
 }
@@ -389,8 +394,6 @@ window.clearAllFilters = function () {
 function renderGalleryList(galleries) {
     const container = document.getElementById('galleryView');
     if (!container) return;
-    if (coverObserver) coverObserver.disconnect();
-    setupCoverObserver();
 
     if (galleries.length === 0) {
         container.innerHTML = `<div class="empty-state"><i class="fas fa-images"></i><h3>沒有找到圖庫</h3>
@@ -398,13 +401,19 @@ function renderGalleryList(galleries) {
             <button class="btn-clear" onclick="clearAllFilters()" style="margin-top:20px"><i class="fas fa-times"></i> 清除篩選</button></div>`;
         return;
     }
+
     container.innerHTML = galleries.map(g => `
         <div class="gallery-card" onclick="openGalleryViewer('${g.id}')">
             <div class="gallery-cover-container">
-                ${g.coverImage ? `<canvas data-src="${g.coverImage}" class="gallery-cover lazy-cover" style="opacity:0;"></canvas>` : ''}
-                <div class="placeholder-cover" style="background-color:${g.color};display:${g.coverImage ? 'none' : 'flex'};">
+                <div class="placeholder-cover" style="background-color:${g.color};">
                     <div class="placeholder-text">${g.initials}</div>
                 </div>
+                ${g.coverImage ? `
+                    <img src="${g.coverImage}" class="gallery-cover-img"
+                         loading="lazy" decoding="async"
+                         onload="this.classList.add('loaded')"
+                         onerror="this.remove()">
+                ` : ''}
             </div>
             <div class="gallery-info">
                 <div class="gallery-title"><span>${escHtml(g.name)}</span><span class="file-count">${g.fileCount || 0} 張</span></div>
@@ -415,8 +424,6 @@ function renderGalleryList(galleries) {
             </div>
         </div>
     `).join('');
-
-    container.querySelectorAll('canvas.lazy-cover').forEach(c => coverObserver.observe(c));
 }
 
 window.handleCoverImageError = function (el, id) {
