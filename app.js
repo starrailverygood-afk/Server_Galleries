@@ -16,6 +16,44 @@ let autoPlaySpeed = 10000;
 let isFsAutoPlaying = false;
 let progressStartTime = 0;
 
+// ═══ 懶載入 Observer（核心優化） ═══
+let coverObserver = null;
+let gridObserver = null;
+
+function setupCoverObserver() {
+    if (coverObserver) coverObserver.disconnect();
+    coverObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            const img = entry.target;
+            if (entry.isIntersecting) {
+                if (img.dataset.src && !img.src) {
+                    img.src = img.dataset.src;
+                }
+            }
+        });
+    }, { rootMargin: '300px' });
+}
+
+function setupGridObserver() {
+    if (gridObserver) gridObserver.disconnect();
+    gridObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            const img = entry.target;
+            if (entry.isIntersecting) {
+                // 進入畫面：載入圖片
+                if (img.dataset.src) {
+                    img.src = img.dataset.src;
+                }
+            } else {
+                // 離開畫面：釋放記憶體（動態圖關鍵優化）
+                if (img.dataset.src && img.src) {
+                    img.removeAttribute('src');
+                }
+            }
+        });
+    }, { rootMargin: '400px' });
+}
+
 function buildB2Url(...segs) {
     const s = segs.filter(s => s && s !== '').map(s => s.replace(/^\/+|\/+$/g, ''));
     return (B2_BASE_URL + '/' + s.join('/')).replace(/([^:]\/)\/+/g, '$1');
@@ -26,19 +64,12 @@ function escAttr(str) { return (str || '').replace(/'/g, "\\'").replace(/"/g, '&
 
 // ========== 主頁籤切換 ==========
 function switchMainTab(tab) {
-    // 切換按鈕樣式
     document.querySelectorAll('.main-tab').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tab);
     });
-
-    // 切換區塊顯示
     document.getElementById('gallerySection').style.display = tab === 'gallery' ? '' : 'none';
     document.getElementById('videoSection').style.display = tab === 'video' ? '' : 'none';
-
-    // 切換側邊欄（影片頁不需要篩選）
     document.querySelector('.sidebar').style.display = tab === 'gallery' ? '' : 'none';
-
-    // 切到影片時載入影片列表
     if (tab === 'video') {
         loadVideos();
     }
@@ -63,7 +94,7 @@ async function loadVideos() {
                class="gallery-card" style="text-decoration:none;color:inherit;display:block;">
                 <div class="gallery-cover" style="position:relative;">
                     ${v.thumbnail
-                        ? `<img src="${v.thumbnail}" alt="${v.title}" style="width:100%;height:100%;object-fit:cover;">`
+                        ? `<img src="${v.thumbnail}" alt="${v.title}" loading="lazy" decoding="async" style="width:100%;height:100%;object-fit:cover;">`
                         : `<div style="display:flex;align-items:center;justify-content:center;height:100%;background:#1a1a2e;"><i class="fas fa-play-circle" style="font-size:48px;color:#e94560;"></i></div>`
                     }
                     <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:40px;color:rgba(255,255,255,0.8);text-shadow:0 0 20px rgba(0,0,0,0.8);">
@@ -87,6 +118,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     const loading = document.getElementById('loading');
     if (loading) loading.style.display = 'none';
 
+    // 初始化 Observer
+    setupCoverObserver();
+    setupGridObserver();
+
     try {
         await loadGalleryData();
         await loadVideoData();
@@ -99,7 +134,6 @@ document.addEventListener('DOMContentLoaded', async function () {
         showError('無法載入圖庫數據: ' + error.message);
     }
 
-    // Header 右側按鈕
     const header = document.querySelector('.header');
     if (header) {
         const right = document.createElement('div');
@@ -285,7 +319,6 @@ function filterContent() {
     }
 }
 
-// 保留舊名相容
 function filterGalleries() { filterContent(); }
 
 window.clearAllFilters = function () {
@@ -295,10 +328,15 @@ window.clearAllFilters = function () {
     else renderVideoList(videoDatabase);
 };
 
-// ═══ 圖庫渲染 ═══
+// ═══ 圖庫渲染（懶載入優化） ═══
 function renderGalleryList(galleries) {
     const container = document.getElementById('galleryView');
     if (!container) return;
+
+    // 斷開舊的 observer
+    if (coverObserver) coverObserver.disconnect();
+    setupCoverObserver();
+
     if (galleries.length === 0) {
         container.innerHTML = `<div class="empty-state"><i class="fas fa-images"></i><h3>沒有找到圖庫</h3>
             <p>請嘗試選擇其他標籤或清除篩選條件</p>
@@ -308,8 +346,8 @@ function renderGalleryList(galleries) {
     container.innerHTML = galleries.map(g => `
         <div class="gallery-card" onclick="openGalleryViewer('${g.id}')">
             <div class="gallery-cover-container">
-                <img src="${g.coverImage || ''}" alt="${escHtml(g.name)}" class="gallery-cover"
-                     onerror="handleCoverImageError(this,'${g.id}')" loading="lazy">
+                <img data-src="${g.coverImage || ''}" alt="${escHtml(g.name)}" class="gallery-cover lazy-cover"
+                     onerror="handleCoverImageError(this,'${g.id}')" decoding="async">
                 <div class="placeholder-cover" style="background-color:${g.color};display:none;">
                     <div class="placeholder-text">${g.initials}</div>
                 </div>
@@ -323,6 +361,11 @@ function renderGalleryList(galleries) {
             </div>
         </div>
     `).join('');
+
+    // 對所有封面圖啟用 IntersectionObserver 懶載入
+    container.querySelectorAll('img.lazy-cover').forEach(img => {
+        coverObserver.observe(img);
+    });
 }
 
 window.handleCoverImageError = function (img, id) {
@@ -353,7 +396,7 @@ function renderVideoList(videos) {
         <div class="gallery-card video-card" onclick="window.open('${escAttr(v.url)}','_blank')">
             <div class="gallery-cover-container">
                 ${hasCover ? `
-                    <img src="${coverUrl}" class="gallery-cover" loading="lazy"
+                    <img src="${coverUrl}" class="gallery-cover" loading="lazy" decoding="async"
                          onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                     <div class="placeholder-cover" style="background-color:${color};display:none;">
                         <div class="placeholder-text">🎬</div>
@@ -467,6 +510,11 @@ async function loadGalleryImages(gallery) {
     const grid = document.getElementById('imageGrid-' + gallery.id);
     if (!grid) return;
     grid.innerHTML = '';
+
+    // 重新初始化 grid observer
+    if (gridObserver) gridObserver.disconnect();
+    setupGridObserver();
+
     const files = gallery.fullImagePaths || [];
     if (files.length === 0) {
         for (let i = 1; i <= gallery.fileCount; i++) {
@@ -480,9 +528,17 @@ async function loadGalleryImages(gallery) {
     files.forEach((path, idx) => {
         const d = document.createElement('div');
         d.className = 'grid-image-item';
-        d.innerHTML = `<img src="${path}" alt="${escHtml(gallery.name)} - ${idx + 1}" onclick="openImageFullscreen('${gallery.id}',${idx})" loading="lazy"
+        // 用 data-src 取代 src，由 Observer 控制載入/卸載
+        d.innerHTML = `<img data-src="${path}" alt="${escHtml(gallery.name)} - ${idx + 1}" 
+            class="lazy-grid-img" decoding="async"
+            onclick="openImageFullscreen('${gallery.id}',${idx})"
             onerror="handleGridImageError(this,'${gallery.id}',${idx})">`;
         grid.appendChild(d);
+    });
+
+    // 啟用 IntersectionObserver：只載入可見圖片，離開畫面時卸載
+    grid.querySelectorAll('img.lazy-grid-img').forEach(img => {
+        gridObserver.observe(img);
     });
 }
 
@@ -511,7 +567,7 @@ window.openImageFullscreen = function (galleryId, imageIndex) {
         <div class="fs-progress-container">${images.map((_, i) => `<div class="fs-progress-bar" id="progressBar-${i}"><div class="fs-progress-fill" id="progressFill-${i}"></div></div>`).join('')}</div>
         <button class="fs-close-btn" onclick="closeFullscreen()"><i class="fas fa-times"></i></button>
         <div class="fs-image-container">
-            <img id="fsImage" src="" alt="">
+            <img id="fsImage" src="" alt="" decoding="async">
             <div class="fs-click-zone fs-click-left" onclick="fsLeftClick()"></div>
             <div class="fs-click-zone fs-click-right" onclick="fsRightClick()"></div>
             <div class="fs-auto-controls">
@@ -560,6 +616,8 @@ window.closeFullscreen = function () {
     stopFsAutoPlay(); isFsAutoPlaying = false;
 };
 window.closeGalleryViewer = function () {
+    // 關閉時斷開 grid observer 釋放記憶體
+    if (gridObserver) gridObserver.disconnect();
     const v = document.querySelector('.gallery-viewer');
     if (v) v.remove();
     closeFullscreen();
